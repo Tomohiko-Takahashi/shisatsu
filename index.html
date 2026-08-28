@@ -112,7 +112,7 @@ button{font-family:inherit;}
 
 /* MAP VIEW */
 #mapView{background:#E9EBE7;}
-#map{position:absolute;top:0;left:0;right:0;bottom:92px;}
+#map{position:absolute;top:0;left:0;right:0;bottom:112px;}
 .pin{
   width:24px;height:24px;border-radius:50%;background:var(--ink);border:2px solid #fff;
   box-shadow:0 1px 3px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;
@@ -126,7 +126,7 @@ button{font-family:inherit;}
 .emptyState .big{font-size:14px;color:var(--ink);margin-bottom:4px;}
 .emptyState .sm{font-size:12px;}
 .fitBtn{
-  position:absolute;right:20px;bottom:112px;z-index:900;
+  position:absolute;right:20px;bottom:132px;z-index:900;
   width:40px;height:40px;border-radius:50%;background:var(--panel);
   border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;
 }
@@ -144,7 +144,7 @@ button{font-family:inherit;}
 }
 .drawChip.active{background:var(--blue);border-color:var(--blue);color:#fff;}
 .drawChip.addChip{background:none;border-style:dashed;color:var(--blue);}
-#drawingBody{position:absolute;top:48px;left:0;right:0;bottom:92px;overflow:hidden;}
+#drawingBody{position:absolute;top:48px;left:0;right:0;bottom:112px;overflow:hidden;}
 #drawingScroll{position:absolute;inset:0;overflow:auto;}
 #drawingInner{position:relative;margin:20px;}
 #drawingInner img{width:100%;height:100%;display:block;user-select:none;-webkit-user-drag:none;}
@@ -160,7 +160,7 @@ button{font-family:inherit;}
   font-size:13px;cursor:pointer;
 }
 .zoomCtrl{
-  position:absolute;right:16px;bottom:112px;z-index:800;display:flex;flex-direction:column;gap:6px;
+  position:absolute;right:16px;bottom:132px;z-index:800;display:flex;flex-direction:column;gap:6px;
 }
 .zoomCtrl button{
   width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--panel);
@@ -169,18 +169,25 @@ button{font-family:inherit;}
 
 /* POOL TRAY (shared: map+drawing views) */
 .poolTray{
-  position:absolute;left:0;right:0;bottom:0;height:92px;background:var(--panel);
+  position:absolute;left:0;right:0;bottom:0;height:112px;background:var(--panel);
   border-top:1px solid var(--line);z-index:850;display:flex;flex-direction:column;
 }
-.poolTrayHead{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--muted);padding:6px 12px 2px;flex:none;gap:8px;}
+.poolTrayHead{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--muted);padding:8px 12px 4px;flex:none;gap:8px;}
 .poolTrayHead b{color:var(--blue-deep);font-family:'JetBrains Mono',monospace;}
 .poolTrayHead span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.poolRefreshBtn{flex:none;font-size:10px;color:var(--warn);background:none;border:none;cursor:pointer;padding:0;}
-.poolRefreshBtn:hover{text-decoration:underline;}
 .poolSplit{flex:1;display:flex;overflow:hidden;}
+.poolCol{flex:1;display:flex;flex-direction:column;min-width:0;}
+.poolColDraw{flex:0 0 34%;}
+.poolColHead{display:flex;justify-content:space-between;align-items:center;padding:6px 10px 4px;flex:none;gap:6px;}
+.poolColHead span{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.poolColHead b{color:var(--blue-deep);font-family:'JetBrains Mono',monospace;}
 .poolDivider{width:1px;flex:none;background:var(--line);margin:8px 2px;}
+.poolRefreshBtn{
+  flex:none;font-size:10px;font-weight:500;color:var(--warn);background:#FBEDE7;border:1.5px solid var(--warn);
+  border-radius:14px;padding:5px 11px;cursor:pointer;white-space:nowrap;
+}
+.poolRefreshBtn:hover{background:var(--warn);color:#fff;}
 .poolItems{flex:1;display:flex;gap:8px;align-items:center;padding:0 12px 8px;overflow-x:auto;}
-.poolItemsDraw{flex:0 0 32%;}
 .poolAddChip{
   flex:none;width:auto;height:52px;padding:0 12px;border-radius:8px;border:1.5px dashed var(--blue);background:var(--blue-tint);
   color:var(--blue-deep);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;
@@ -407,14 +414,21 @@ button{font-family:inherit;}
     <div class="emptyState" id="mapEmpty"><div class="big">まだ写真がありません</div><div class="sm">下のプールの「+」から追加してください</div></div>
     <button class="fitBtn" id="fitBtn" title="全体表示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
     <div class="poolTray">
-      <div class="poolTrayHead">
-        <span>写真プール <b id="mapPoolCount">0</b>件・図面プール <b id="mapDrawPoolCount">0</b>件・ドラッグして配置</span>
-        <button class="poolRefreshBtn" id="mapPoolRefreshBtn">プールのリフレッシュ</button>
-      </div>
       <div class="poolSplit">
-        <div class="poolItems" id="mapPoolItems"></div>
+        <div class="poolCol">
+          <div class="poolColHead">
+            <span>写真プール <b id="mapPoolCount">0</b>件</span>
+            <button class="poolRefreshBtn" id="mapPoolRefreshBtn">写真プールをリフレッシュ</button>
+          </div>
+          <div class="poolItems" id="mapPoolItems"></div>
+        </div>
         <div class="poolDivider"></div>
-        <div class="poolItems poolItemsDraw" id="mapDrawPoolItems"></div>
+        <div class="poolCol poolColDraw">
+          <div class="poolColHead">
+            <span>図面プール <b id="mapDrawPoolCount">0</b>件</span>
+          </div>
+          <div class="poolItems" id="mapDrawPoolItems"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -432,7 +446,7 @@ button{font-family:inherit;}
     <div class="poolTray">
       <div class="poolTrayHead">
         <span>プール <b id="drawPoolCount">0</b>件・タップで詳細、ドラッグして図面に配置</span>
-        <button class="poolRefreshBtn" id="drawPoolRefreshBtn">プールのリフレッシュ</button>
+        <button class="poolRefreshBtn" id="drawPoolRefreshBtn">写真プールをリフレッシュ</button>
       </div>
       <div class="poolItems" id="drawPoolItems"></div>
     </div>
@@ -780,7 +794,7 @@ function bindUI(){
     document.getElementById('uploadNameModal').classList.remove('open');
     await processPendingUpload(name);
   });
-  document.getElementById('fitBtn').addEventListener('click', fitAll);
+  document.getElementById('fitBtn').addEventListener('click', ()=> fitAll());
   document.getElementById('mapPoolRefreshBtn').addEventListener('click', ()=> refreshPool('map'));
   document.getElementById('drawPoolRefreshBtn').addEventListener('click', ()=> refreshPool(currentDrawingId));
 
@@ -977,10 +991,10 @@ function openProject(id){
   currentView = 'map';
   currentDrawingId = null;
   document.querySelectorAll('.tabbtn').forEach(b=> b.classList.toggle('active', b.dataset.view==='map'));
-  renderProjectScreen();
+  renderProjectScreen(true);
 }
 
-function renderProjectScreen(){
+function renderProjectScreen(fitOnOpen){
   const p = currentProject();
   if(!p){ goToProjectList(); return; }
   document.getElementById('backBtn').style.display = 'flex';
@@ -1000,7 +1014,11 @@ function renderProjectScreen(){
   renderDrawingView();
   renderThumbView();
   renderMapPoolTray(); renderDrawingPoolTray();
-  setTimeout(()=>{ if(map) map.invalidateSize(); }, 60);
+  setTimeout(()=>{
+    if(!map) return;
+    map.invalidateSize();
+    if(fitOnOpen) fitAll(true);
+  }, 60);
 }
 
 function switchView(v){
@@ -1058,11 +1076,11 @@ function renderMapView(){
     });
   });
 }
-function fitAll(){
+function fitAll(silent){
   const p = currentProject();
   const mapPhotos = p.photos.filter(ph=>ph.kind==='map');
   const placedDrawings = p.drawings.filter(d=> d.lat !== undefined);
-  if(!mapPhotos.length && !placedDrawings.length){ toast('地図上に何もありません'); return; }
+  if(!mapPhotos.length && !placedDrawings.length){ if(!silent) toast('地図上に何もありません'); return; }
   const points = [...mapPhotos.map(ph=>[ph.lat,ph.lng]), ...placedDrawings.map(d=>[d.lat,d.lng])];
   map.fitBounds(L.latLngBounds(points), { padding:[40,40], maxZoom:17 });
 }
