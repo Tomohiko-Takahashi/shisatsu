@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="シサツ">
+<meta name="theme-color" content="#2E5C87">
 <title>シサツ！</title>
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
@@ -39,6 +43,7 @@ button{font-family:inherit;}
 .logo-jump span:nth-child(2){transform:translateY(-5px) rotate(4deg);}
 .logo-jump span:nth-child(3){transform:translateY(1px) rotate(-3deg);}
 .logo-jump span:nth-child(4){transform:translateY(-3px) rotate(6deg);}
+.rockfont{font-family:'RocknRoll One',sans-serif;}
 
 /* ── HEADER (shared) ─────────────────────── */
 #header{
@@ -85,12 +90,17 @@ button{font-family:inherit;}
 #projectListScreen{position:fixed;top:52px;left:0;right:0;bottom:0;overflow-y:auto;padding:20px 16px 100px;}
 #projGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;max-width:840px;margin:0 auto;}
 .projCard{
-  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
   padding:16px 14px;cursor:pointer;text-align:left;
 }
 .projCard:hover{border-color:var(--blue);}
-.projCard .pname{font-size:14px;font-weight:700;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.projCard .pname{font-size:14px;font-weight:700;margin-bottom:6px;padding-right:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .projCard .pmeta{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+.projEditBtn{
+  position:absolute;top:8px;right:8px;width:24px;height:24px;border:none;background:none;
+  color:var(--muted);font-size:16px;line-height:1;cursor:pointer;border-radius:6px;
+}
+.projEditBtn:hover{background:var(--paper);color:var(--ink);}
 #projListEmpty{text-align:center;color:var(--muted);font-size:13px;margin-top:60px;}
 #newProjBtn{
   position:fixed;right:20px;bottom:24px;z-index:900;
@@ -104,34 +114,24 @@ button{font-family:inherit;}
 /* ══════════════ PROJECT SCREEN ══════════════ */
 #projectScreen{display:none;}
 .pview{position:fixed;left:0;right:0;bottom:0;display:none;}
-.pview.active{display:block;}
 
 /* MAP VIEW */
 #mapView{background:#E9EBE7;}
-#map{position:absolute;inset:0;}
+#map{position:absolute;top:0;left:0;right:0;bottom:92px;}
 .pin{
-  width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
-  background:var(--blue);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);
-  display:flex;align-items:center;justify-content:center;
+  width:24px;height:24px;border-radius:50%;background:var(--ink);border:2px solid #fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;
 }
-.pin span{transform:rotate(45deg);color:#fff;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;}
-.pin.active{background:var(--warn);}
+.pin span{color:#fff;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;}
+.pin.active{box-shadow:0 0 0 3px rgba(29,43,50,.28),0 1px 3px rgba(0,0,0,.4);}
 .emptyState{
   position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   text-align:center;color:var(--muted);pointer-events:none;z-index:400;width:80%;
 }
 .emptyState .big{font-size:14px;color:var(--ink);margin-bottom:4px;}
 .emptyState .sm{font-size:12px;}
-.fab{
-  position:absolute;right:20px;bottom:24px;z-index:900;
-  background:var(--blue);color:#fff;border:none;border-radius:24px;
-  padding:13px 20px 13px 16px;display:flex;align-items:center;gap:8px;
-  font-size:14px;font-weight:500;cursor:pointer;box-shadow:0 3px 10px rgba(31,66,102,.35);
-}
-.fab:hover{background:var(--blue-deep);}
-.fab svg{width:18px;height:18px;}
 .fitBtn{
-  position:absolute;right:20px;bottom:78px;z-index:900;
+  position:absolute;right:20px;bottom:112px;z-index:900;
   width:40px;height:40px;border-radius:50%;background:var(--panel);
   border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;
 }
@@ -139,9 +139,8 @@ button{font-family:inherit;}
 
 /* DRAWING VIEW */
 #drawingView{background:var(--paper);}
-#drawingView.active{display:flex;flex-direction:column;}
 #drawingTabs{
-  flex:none;display:flex;gap:6px;padding:10px 12px;overflow-x:auto;
+  position:absolute;top:0;left:0;right:0;height:48px;display:flex;gap:6px;padding:8px 12px;overflow-x:auto;
   background:var(--panel);border-bottom:1px solid var(--line);
 }
 .drawChip{
@@ -150,14 +149,12 @@ button{font-family:inherit;}
 }
 .drawChip.active{background:var(--blue);border-color:var(--blue);color:#fff;}
 .drawChip.addChip{background:none;border-style:dashed;color:var(--blue);}
-#drawingBody{flex:1;position:relative;overflow:hidden;}
+#drawingBody{position:absolute;top:48px;left:0;right:0;bottom:92px;overflow:hidden;}
 #drawingScroll{position:absolute;inset:0;overflow:auto;}
 #drawingInner{position:relative;margin:20px;}
 #drawingInner img{width:100%;height:100%;display:block;user-select:none;-webkit-user-drag:none;}
-#drawingInner.placing{cursor:crosshair;outline:2px dashed var(--blue);}
-.dpin{
-  position:absolute;transform:translate(-50%,-100%);cursor:pointer;
-}
+#drawingInner.dragOver{outline:3px dashed var(--blue);outline-offset:-3px;}
+.dpin{position:absolute;transform:translate(-50%,-50%);cursor:grab;touch-action:none;}
 #drawingEmpty{
   position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   text-align:center;color:var(--muted);width:80%;
@@ -168,24 +165,35 @@ button{font-family:inherit;}
   font-size:13px;cursor:pointer;
 }
 .zoomCtrl{
-  position:absolute;right:16px;bottom:24px;z-index:800;display:flex;flex-direction:column;gap:6px;
+  position:absolute;right:16px;bottom:112px;z-index:800;display:flex;flex-direction:column;gap:6px;
 }
 .zoomCtrl button{
   width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--panel);
   font-size:16px;cursor:pointer;color:var(--ink);
 }
-#drawAddBtn{
-  position:absolute;left:16px;bottom:24px;z-index:800;
-  background:var(--blue);color:#fff;border:none;border-radius:24px;
-  padding:12px 18px 12px 15px;display:flex;align-items:center;gap:7px;
-  font-size:13px;font-weight:500;cursor:pointer;box-shadow:0 3px 10px rgba(31,66,102,.35);
+
+/* POOL TRAY (shared: map+drawing views) */
+.poolTray{
+  position:absolute;left:0;right:0;bottom:0;height:92px;background:var(--panel);
+  border-top:1px solid var(--line);z-index:850;display:flex;flex-direction:column;
 }
-#drawAddBtn svg{width:16px;height:16px;}
-#placingBanner{
-  position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:850;
-  background:var(--ink);color:#fff;font-size:12px;padding:8px 16px;border-radius:20px;display:none;
+.poolTrayHead{font-size:10px;color:var(--muted);padding:6px 12px 2px;flex:none;}
+.poolTrayHead b{color:var(--blue-deep);font-family:'JetBrains Mono',monospace;}
+.poolItems{flex:1;display:flex;gap:8px;align-items:center;padding:0 12px 8px;overflow-x:auto;}
+.poolAddChip{
+  flex:none;width:52px;height:52px;border-radius:8px;border:1.5px dashed var(--blue);background:var(--blue-tint);
+  color:var(--blue-deep);display:flex;align-items:center;justify-content:center;cursor:pointer;
 }
-#placingBanner.show{display:block;}
+.poolAddChip svg{width:20px;height:20px;}
+.poolChip{
+  flex:none;width:52px;height:52px;border-radius:8px;overflow:hidden;background:#000;
+  border:1px solid var(--line);cursor:grab;touch-action:none;
+}
+.poolChip img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;}
+.dragGhost{
+  position:fixed;width:56px;height:56px;border-radius:8px;object-fit:cover;
+  pointer-events:none;z-index:5000;opacity:.85;box-shadow:0 4px 14px rgba(0,0,0,.4);transform:translate(-50%,-50%);
+}
 
 /* THUMB VIEW */
 #thumbView{background:var(--paper);overflow-y:auto;padding:14px 16px 100px;}
@@ -210,6 +218,9 @@ button{font-family:inherit;}
   background:rgba(29,43,50,.65);color:var(--star);font-size:11px;padding:2px 6px;border-radius:10px;
 }
 #thumbEmpty{text-align:center;color:var(--muted);font-size:13px;margin-top:60px;}
+.thumbDivider{grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:10px 0 4px;}
+.thumbDivider .line{flex:1;height:1px;background:var(--line);}
+.thumbDivider .dtitle{font-size:11px;color:var(--muted);white-space:nowrap;}
 
 /* ── STAR VOTE ────────────────────────────── */
 .starBtn{
@@ -243,13 +254,13 @@ button{font-family:inherit;}
 #panelClose svg{width:14px;height:14px;}
 #panelImgWrap{background:#0F1B21;height:220px;flex:none;position:relative;}
 #panelImgWrap img{width:100%;height:100%;object-fit:contain;}
-#rotateCtrl{position:absolute;left:8px;bottom:8px;display:flex;gap:6px;}
-#rotateCtrl button{
-  width:30px;height:30px;border-radius:7px;border:none;background:rgba(255,255,255,.15);
+#rotateCtrl{position:absolute;left:8px;bottom:8px;}
+#rotateBtn{
+  width:32px;height:32px;border-radius:7px;border:none;background:rgba(255,255,255,.15);
   color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;
 }
-#rotateCtrl button:hover{background:rgba(255,255,255,.28);}
-#rotateCtrl svg{width:15px;height:15px;}
+#rotateBtn:hover{background:rgba(255,255,255,.28);}
+#rotateBtn svg{width:16px;height:16px;}
 #panelMeta{padding:14px 16px;border-bottom:1px solid var(--line);flex:none;}
 #panelMeta .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;}
 #panelMeta .coord{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--blue-deep);margin-bottom:8px;}
@@ -352,11 +363,14 @@ button{font-family:inherit;}
 
 <!-- ══════════ PROJECT SCREEN ══════════ -->
 <div id="projectScreen">
-  <div id="mapView" class="pview active">
+  <div id="mapView" class="pview">
     <div id="map"></div>
-    <div class="emptyState" id="mapEmpty"><div class="big">まだ写真がありません</div><div class="sm">右下の「写真を追加」からアップロードしてください</div></div>
+    <div class="emptyState" id="mapEmpty"><div class="big">まだ写真がありません</div><div class="sm">下のプールの「+」から追加してください</div></div>
     <button class="fitBtn" id="fitBtn" title="全体表示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
-    <button class="fab" id="fab"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>写真を追加</button>
+    <div class="poolTray">
+      <div class="poolTrayHead">プール <b class="poolCount">0</b>件・タップで詳細、ドラッグして地図に配置</div>
+      <div class="poolItems"></div>
+    </div>
   </div>
 
   <div id="drawingView" class="pview">
@@ -364,19 +378,22 @@ button{font-family:inherit;}
     <div id="drawingBody">
       <div id="drawingScroll"><div id="drawingInner"><img id="drawingImg" src=""></div></div>
       <div id="drawingEmpty"><div class="big">この図面はまだありません</div><button id="drawEmptyBtn">+ 図面を追加</button></div>
-      <div id="placingBanner">図面上をタップして配置位置を指定してください</div>
       <div class="zoomCtrl">
         <button id="zoomIn">＋</button>
         <button id="zoomOut">－</button>
       </div>
-      <button id="drawAddBtn"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>写真を追加</button>
+    </div>
+    <div class="poolTray">
+      <div class="poolTrayHead">プール <b class="poolCount">0</b>件・タップで詳細、ドラッグして図面に配置</div>
+      <div class="poolItems"></div>
     </div>
   </div>
 
   <div id="thumbView" class="pview">
     <div id="thumbToolbar">
       <button class="sortbtn active" data-sort="new">新着順</button>
-      <button class="sortbtn" data-sort="vote">なるほど！順</button>
+      <button class="sortbtn" data-sort="vote">ナルホド！順</button>
+      <button class="sortbtn" data-sort="location">場所順</button>
     </div>
     <div id="thumbGrid"></div>
     <div id="thumbEmpty" style="display:none;">まだ写真がありません</div>
@@ -384,7 +401,6 @@ button{font-family:inherit;}
 </div>
 
 <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
-<input type="file" id="drawingFileInput" accept="image/*,application/pdf" style="display:none">
 <input type="file" id="newDrawingFileInput" accept="image/*,application/pdf" style="display:none">
 
 <!-- ══════════ SIDE PANEL ══════════ -->
@@ -393,8 +409,7 @@ button{font-family:inherit;}
   <div id="panelImgWrap">
     <img id="panelImg" src="" alt="">
     <div id="rotateCtrl">
-      <button id="rotateLeftBtn" title="左に回転"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
-      <button id="rotateRightBtn" title="右に回転"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+      <button id="rotateBtn" title="時計回りに回転"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
     </div>
   </div>
   <div id="panelMeta">
@@ -409,7 +424,7 @@ button{font-family:inherit;}
       </button>
       <button id="delBtn">削除</button>
     </div>
-    <button id="resetGeoBtn">📍 ジオタグ位置に戻す</button>
+    <button id="resetGeoBtn">📍 元の位置に戻す</button>
   </div>
   <div id="comments"></div>
   <div id="commentForm">
@@ -431,11 +446,23 @@ button{font-family:inherit;}
   </div>
 </div>
 
+<div class="modalBg" id="projEditModal">
+  <div class="card">
+    <h2>プロジェクトを編集</h2>
+    <input type="text" id="projEditName" placeholder="プロジェクト名">
+    <div class="modalBtns">
+      <button class="ghostBtn" id="projDeleteBtn">削除する</button>
+      <button class="primaryBtn" id="projRenameBtn">名前を保存</button>
+    </div>
+    <button id="projEditClose" class="closeBtn">閉じる</button>
+  </div>
+</div>
+
 <div class="modalBg" id="newDrawModal">
   <div class="card">
     <h2>図面を追加</h2>
-    <p>PDFまたは画像(JPEG/PNG)をアップロードしてください。PDFは1ページ目を読み込みます。</p>
-    <input type="text" id="newDrawName" placeholder="図面名(例: 1階平面図)">
+    <p>PDFまたは画像(JPEG/PNG)をアップロードしてください。PDFは1ページ目を読み込みます。棟ごとにタイトルを付けて管理できます。</p>
+    <input type="text" id="newDrawName" placeholder="図面名(例: A棟 1階平面図)">
     <div class="fileRow" id="newDrawFileRow">クリックしてファイルを選択</div>
     <div class="modalBtns">
       <button class="ghostBtn" id="newDrawCancel">キャンセル</button>
@@ -496,11 +523,11 @@ let currentProjectId = null;
 let currentView = 'map';
 let currentDrawingId = null;
 let activePhotoId = null;
-let pendingDrawingPhoto = null;
+let editingProjectId = null;
 let drawingZoom = 1;
 
 // ビュー表示切り替え: CSSの詳細度に左右されないよう、インラインstyleで直接制御する
-const VIEW_DISPLAY = { mapView:'block', drawingView:'flex', thumbView:'block' };
+const VIEW_DISPLAY = { mapView:'block', drawingView:'block', thumbView:'block' };
 function showPview(viewId){
   document.querySelectorAll('.pview').forEach(v=>{
     v.style.display = (v.id === viewId) ? (VIEW_DISPLAY[v.id] || 'block') : 'none';
@@ -531,10 +558,40 @@ function formatTime(iso){
 }
 function currentProject(){ return DB.projects.find(p=>p.id===currentProjectId) || null; }
 
+// ── APP ICON (canvasで生成してfavicon/apple-touch-iconに設定) ──
+function setupAppIcon(){
+  if(!document.fonts){ return; }
+  document.fonts.load('700 120px "RocknRoll One"').then(()=>{
+    const size = 180;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#2E5C87';
+    ctx.beginPath(); ctx.arc(size/2, size/2, size/2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 108px "RocknRoll One"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('シ', size/2, size/2 + 8);
+    const dataUrl = canvas.toDataURL('image/png');
+    ['icon','apple-touch-icon'].forEach(rel=>{
+      let link = document.querySelector(`link[rel="${rel}"]`);
+      if(!link){ link = document.createElement('link'); link.rel = rel; document.head.appendChild(link); }
+      link.href = dataUrl;
+    });
+    const manifest = {
+      name:'シサツ！', short_name:'シサツ', display:'standalone',
+      background_color:'#F5F6F3', theme_color:'#2E5C87',
+      icons:[{ src:dataUrl, sizes:'180x180', type:'image/png' }]
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type:'application/json' });
+    let manifestLink = document.querySelector('link[rel="manifest"]');
+    if(!manifestLink){ manifestLink = document.createElement('link'); manifestLink.rel='manifest'; document.head.appendChild(manifestLink); }
+    manifestLink.href = URL.createObjectURL(blob);
+  }).catch(err=> console.error(err));
+}
+
 // ── DROPBOX AUTH (PKCE・リフレッシュトークン方式) ─────────
-// アクセストークンは4時間程度で失効するため使わない。
-// 最初の1回だけログイン連携し、失効しないリフレッシュトークンを保存する。
-// 以降はDropbox SDKが裏側で自動的に新しいアクセストークンに更新し続ける。
 const LS_APPKEY_KEY = 'fieldmap_dbx_appkey';
 const LS_REFRESH_KEY = 'fieldmap_dbx_refresh';
 function redirectUri(){ return location.origin + location.pathname; }
@@ -563,7 +620,6 @@ function startDropboxAuth(appKey){
     .catch(err=>{ console.error(err); toast('連携URLの生成に失敗しました'); });
 }
 
-// ページ読み込み時、Dropboxからの戻り(?code=...)を処理してリフレッシュトークンを取得する
 async function handleOAuthRedirect(){
   const params = new URLSearchParams(location.search);
   const code = params.get('code');
@@ -571,10 +627,7 @@ async function handleOAuthRedirect(){
   const appKey = localStorage.getItem(LS_APPKEY_KEY);
   const verifier = sessionStorage.getItem('fieldmap_code_verifier');
   const statusEl = document.getElementById('setupStatus');
-  if(!appKey || !verifier){
-    history.replaceState({}, '', redirectUri());
-    return;
-  }
+  if(!appKey || !verifier){ history.replaceState({}, '', redirectUri()); return; }
   if(statusEl) statusEl.textContent = '連携中…';
   try{
     const dbxAuth = new Dropbox.DropboxAuth({ clientId: appKey });
@@ -594,6 +647,7 @@ async function handleOAuthRedirect(){
 
 // ── INIT ─────────────────────────────────────────────────
 async function init(){
+  setupAppIcon();
   document.getElementById('setupConnectBtn').addEventListener('click', ()=>{
     startDropboxAuth(document.getElementById('setupAppKeyInput').value.trim());
   });
@@ -629,20 +683,18 @@ async function init(){
 
 function resizeLayout(){
   const h = document.getElementById('header').offsetHeight;
-  ['projectListScreen'].forEach(id=>{ document.getElementById(id).style.top = h+'px'; });
+  document.getElementById('projectListScreen').style.top = h+'px';
   document.querySelectorAll('.pview').forEach(el=> el.style.top = h+'px');
   if(map) map.invalidateSize();
 }
 
 function bindUI(){
-  // header
   document.getElementById('backBtn').addEventListener('click', goToProjectList);
   document.getElementById('reloadBtn').addEventListener('click', ()=>loadFromDropbox(true));
   document.querySelectorAll('.tabbtn').forEach(b=>{
     b.addEventListener('click', ()=> switchView(b.dataset.view));
   });
 
-  // project list
   document.getElementById('newProjBtn').addEventListener('click', ()=>{
     document.getElementById('newProjName').value = '';
     document.getElementById('newProjModal').classList.add('open');
@@ -650,16 +702,14 @@ function bindUI(){
   document.getElementById('newProjCancel').addEventListener('click', ()=> document.getElementById('newProjModal').classList.remove('open'));
   document.getElementById('newProjCreate').addEventListener('click', createProject);
 
-  // map view
-  document.getElementById('fab').addEventListener('click', ()=>document.getElementById('fileInput').click());
-  document.getElementById('fileInput').addEventListener('change', onMapFilesChosen);
+  document.getElementById('projEditClose').addEventListener('click', ()=> document.getElementById('projEditModal').classList.remove('open'));
+  document.getElementById('projRenameBtn').addEventListener('click', renameProject);
+  document.getElementById('projDeleteBtn').addEventListener('click', deleteProject);
+
+  document.getElementById('fileInput').addEventListener('change', onFilesChosen);
   document.getElementById('fitBtn').addEventListener('click', fitAll);
 
-  // drawing view
-  document.getElementById('drawAddBtn').addEventListener('click', startDrawingPhotoUpload);
   document.getElementById('drawEmptyBtn').addEventListener('click', openNewDrawModal);
-  document.getElementById('drawingFileInput').addEventListener('change', onDrawingPhotoFileChosen);
-  document.getElementById('drawingInner').addEventListener('click', onDrawingClick);
   document.getElementById('zoomIn').addEventListener('click', ()=> setDrawingZoom(drawingZoom+0.25));
   document.getElementById('zoomOut').addEventListener('click', ()=> setDrawingZoom(drawingZoom-0.25));
 
@@ -671,7 +721,6 @@ function bindUI(){
   document.getElementById('newDrawCancel').addEventListener('click', ()=> document.getElementById('newDrawModal').classList.remove('open'));
   document.getElementById('newDrawCreate').addEventListener('click', createDrawing);
 
-  // thumb view
   document.querySelectorAll('.sortbtn').forEach(b=>{
     b.addEventListener('click', ()=>{
       document.querySelectorAll('.sortbtn').forEach(x=>x.classList.remove('active'));
@@ -680,7 +729,6 @@ function bindUI(){
     });
   });
 
-  // panel
   document.getElementById('panelClose').addEventListener('click', closePanel);
   document.getElementById('commentSend').addEventListener('click', sendComment);
   document.getElementById('commentInput').addEventListener('keydown', e=>{
@@ -689,10 +737,8 @@ function bindUI(){
   document.getElementById('delBtn').addEventListener('click', deleteActivePhoto);
   document.getElementById('starBtn').addEventListener('click', toggleVote);
   document.getElementById('resetGeoBtn').addEventListener('click', resetToGeotag);
-  document.getElementById('rotateLeftBtn').addEventListener('click', ()=>rotateActivePhoto(-90));
-  document.getElementById('rotateRightBtn').addEventListener('click', ()=>rotateActivePhoto(90));
+  document.getElementById('rotateBtn').addEventListener('click', ()=>rotateActivePhoto(90));
 
-  // settings
   document.getElementById('settingsBtn').addEventListener('click', ()=>{
     document.getElementById('settingsAppKeyInput').value = localStorage.getItem(LS_APPKEY_KEY) || '';
     document.getElementById('settingsModal').classList.add('open');
@@ -737,7 +783,6 @@ function loadFromDropbox(manual){
     });
 }
 
-// 旧バージョン(プロジェクト概念なし・S.photosのフラット配列)からの移行
 function migrateIfNeeded(){
   if(!DB.projects){
     const oldPhotos = Array.isArray(DB.photos) ? DB.photos : [];
@@ -795,10 +840,10 @@ function renderProjectList(){
   DB.projects.slice().sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt)).forEach(p=>{
     const el = document.createElement('div');
     el.className = 'projCard';
-    const n = p.photos.length;
-    el.innerHTML = `<div class="pname"></div><div class="pmeta"></div>`;
+    el.innerHTML = `<button class="projEditBtn" title="編集">⋯</button><div class="pname"></div><div class="pmeta"></div>`;
     el.querySelector('.pname').textContent = p.name;
-    el.querySelector('.pmeta').textContent = `写真 ${n}件 ・ 図面 ${p.drawings.length}件`;
+    el.querySelector('.pmeta').textContent = `写真 ${p.photos.length}件 ・ 図面 ${p.drawings.length}件`;
+    el.querySelector('.projEditBtn').addEventListener('click', ev=>{ ev.stopPropagation(); openProjEditModal(p.id); });
     el.addEventListener('click', ()=> openProject(p.id));
     grid.appendChild(el);
   });
@@ -812,6 +857,34 @@ function createProject(){
   document.getElementById('newProjModal').classList.remove('open');
   scheduleSave();
   openProject(p.id);
+}
+
+function openProjEditModal(id){
+  editingProjectId = id;
+  const p = DB.projects.find(x=>x.id===id);
+  if(!p) return;
+  document.getElementById('projEditName').value = p.name;
+  document.getElementById('projEditModal').classList.add('open');
+}
+function renameProject(){
+  const p = DB.projects.find(x=>x.id===editingProjectId);
+  if(!p) return;
+  const name = document.getElementById('projEditName').value.trim();
+  if(!name){ toast('プロジェクト名を入力してください'); return; }
+  p.name = name;
+  document.getElementById('projEditModal').classList.remove('open');
+  renderProjectList();
+  if(currentProjectId===p.id) document.getElementById('projTitle').textContent = p.name;
+  scheduleSave();
+}
+function deleteProject(){
+  const p = DB.projects.find(x=>x.id===editingProjectId);
+  if(!p) return;
+  if(!confirm(`「${p.name}」を削除しますか？写真・図面・コメントもすべて削除されます。`)) return;
+  DB.projects = DB.projects.filter(x=>x.id!==editingProjectId);
+  document.getElementById('projEditModal').classList.remove('open');
+  renderProjectList();
+  scheduleSave();
 }
 
 function goToProjectList(){
@@ -849,6 +922,7 @@ function renderProjectScreen(){
   renderDrawingTabs();
   renderDrawingView();
   renderThumbView();
+  renderPoolTray();
   setTimeout(()=>{ if(map) map.invalidateSize(); }, 60);
 }
 
@@ -859,6 +933,7 @@ function switchView(v){
   if(v==='map'){ setTimeout(()=> map && map.invalidateSize(), 60); }
   if(v==='drawing'){ setTimeout(updateDrawingInnerSize, 60); }
   if(v==='thumb'){ renderThumbView(); }
+  renderPoolTray();
 }
 
 // ── MAP VIEW ─────────────────────────────────────────────
@@ -874,7 +949,7 @@ function renderMapView(){
   sorted.forEach((ph, idx)=>{
     const icon = L.divIcon({
       className:'', html:`<div class="pin${ph.id===activePhotoId?' active':''}"><span>${idx+1}</span></div>`,
-      iconSize:[26,26], iconAnchor:[13,26]
+      iconSize:[24,24], iconAnchor:[12,12]
     });
     const marker = L.marker([ph.lat, ph.lng], { icon, draggable:true }).addTo(markersLayer);
     marker.on('click', ()=>openPanel(ph.id));
@@ -894,18 +969,18 @@ function fitAll(){
   map.fitBounds(L.latLngBounds(mapPhotos.map(ph=>[ph.lat,ph.lng])), { padding:[40,40], maxZoom:17 });
 }
 
-async function onMapFilesChosen(e){
+// ── UPLOAD → 自動配置 or プール ──────────────────────────
+async function onFilesChosen(e){
   const files = Array.from(e.target.files || []);
   e.target.value = '';
   if(!files.length) return;
   const p = currentProject();
   const name = getUserName();
-  let added = 0; const skipped = [];
+  let placed = 0, pooled = 0;
 
   for(const file of files){
     try{
       const gps = await exifr.gps(file).catch(()=>null);
-      if(!gps || typeof gps.latitude !== 'number'){ skipped.push(file.name); continue; }
       let captureTime = null;
       try{
         const meta = await exifr.parse(file, { pick:['DateTimeOriginal'] });
@@ -914,19 +989,129 @@ async function onMapFilesChosen(e){
       let orientation = 1;
       try{ const o = await exifr.orientation(file); if(o) orientation = o; }catch(e){}
       const thumb = await compressImage(file, orientation);
-      p.photos.push({
-        id: uid(), kind:'map', lat: gps.latitude, lng: gps.longitude,
-        geoLat: gps.latitude, geoLng: gps.longitude, thumb,
-        uploader: name, filename: file.name, time: captureTime || new Date().toISOString(),
-        comments: [], votes: []
-      });
-      added++;
-    }catch(err){ console.error(err); skipped.push(file.name); }
+      const base = {
+        id: uid(), thumb, uploader: name, filename: file.name,
+        time: captureTime || new Date().toISOString(), comments: [], votes: []
+      };
+      if(gps && typeof gps.latitude === 'number'){
+        p.photos.push({ ...base, kind:'map', lat:gps.latitude, lng:gps.longitude, geoLat:gps.latitude, geoLng:gps.longitude });
+        placed++;
+      }else{
+        p.photos.push({ ...base, kind:'pool' });
+        pooled++;
+      }
+    }catch(err){ console.error(err); }
   }
-  renderMapView(); renderThumbView();
-  if(added) scheduleSave();
-  if(skipped.length) toast(`位置情報のない写真をスキップしました: ${skipped.length}件`);
-  else if(added) toast(`${added}件の写真を追加しました`);
+  renderMapView(); renderPoolTray(); renderThumbView();
+  scheduleSave();
+  if(placed && pooled) toast(`${placed}件を地図に自動配置、${pooled}件をプールに追加しました`);
+  else if(placed) toast(`${placed}件を地図に自動配置しました`);
+  else if(pooled) toast(`${pooled}件をプールに追加しました`);
+}
+
+// ── POOL TRAY + ドラッグ配置 ──────────────────────────────
+function renderPoolTray(){
+  const p = currentProject();
+  if(!p) return;
+  const pool = p.photos.filter(ph=>ph.kind==='pool');
+  document.querySelectorAll('.poolItems').forEach(container=>{
+    container.innerHTML = '';
+    const addChip = document.createElement('button');
+    addChip.className = 'poolAddChip';
+    addChip.title = '写真を追加';
+    addChip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+    addChip.addEventListener('click', ()=> document.getElementById('fileInput').click());
+    container.appendChild(addChip);
+    pool.forEach(ph=>{
+      const chip = document.createElement('div');
+      chip.className = 'poolChip';
+      const img = document.createElement('img');
+      img.src = ph.thumb;
+      chip.appendChild(img);
+      chip.addEventListener('pointerdown', e=>{ e.preventDefault(); startPoolDragMove(e, ph.id); });
+      container.appendChild(chip);
+    });
+  });
+  document.querySelectorAll('.poolCount').forEach(el=> el.textContent = pool.length);
+}
+
+function startPoolDragMove(e, photoId){
+  const ph0 = findPhoto(photoId);
+  if(!ph0) return;
+  const startX = e.clientX, startY = e.clientY;
+  let moved = false, ghost = null;
+
+  function currentTargetEl(){
+    if(currentView==='map') return document.getElementById('map');
+    if(currentView==='drawing' && currentDrawing()) return document.getElementById('drawingInner');
+    return null;
+  }
+  function setDragOver(on){
+    const t = currentTargetEl();
+    if(t) t.classList.toggle('dragOver', !!on);
+  }
+  function inRect(rect, x, y){ return x>=rect.left && x<=rect.right && y>=rect.top && y<=rect.bottom; }
+
+  function onMove(ev){
+    const dx = ev.clientX-startX, dy = ev.clientY-startY;
+    if(!moved && Math.hypot(dx,dy) > 8){
+      moved = true;
+      ghost = document.createElement('img');
+      ghost.className = 'dragGhost';
+      ghost.src = ph0.thumb;
+      document.body.appendChild(ghost);
+    }
+    if(moved){
+      ghost.style.left = ev.clientX+'px';
+      ghost.style.top = ev.clientY+'px';
+      const t = currentTargetEl();
+      setDragOver(t && inRect(t.getBoundingClientRect(), ev.clientX, ev.clientY));
+    }
+  }
+  function onUp(ev){
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    if(ghost) ghost.remove();
+    setDragOver(false);
+    if(!moved){ openPanel(photoId); return; }
+    tryDropPhoto(photoId, ev.clientX, ev.clientY);
+  }
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp, { once:true });
+}
+
+function tryDropPhoto(photoId, clientX, clientY){
+  const ph = findPhoto(photoId);
+  if(!ph) return;
+  if(currentView==='map' && map){
+    const rect = document.getElementById('map').getBoundingClientRect();
+    if(clientX>=rect.left && clientX<=rect.right && clientY>=rect.top && clientY<=rect.bottom){
+      const pt = L.point(clientX-rect.left, clientY-rect.top);
+      const ll = map.containerPointToLatLng(pt);
+      ph.kind = 'map'; ph.lat = ll.lat; ph.lng = ll.lng;
+      renderMapView(); renderPoolTray(); renderThumbView();
+      scheduleSave();
+      toast('地図に配置しました');
+      return;
+    }
+  }
+  if(currentView==='drawing'){
+    const d = currentDrawing();
+    const inner = document.getElementById('drawingInner');
+    if(d && inner){
+      const rect = inner.getBoundingClientRect();
+      if(clientX>=rect.left && clientX<=rect.right && clientY>=rect.top && clientY<=rect.bottom){
+        const x = (clientX-rect.left)/rect.width*100;
+        const y = (clientY-rect.top)/rect.height*100;
+        ph.kind = 'drawing'; ph.drawingId = d.id; ph.x = x; ph.y = y;
+        renderDrawingPins(); renderPoolTray(); renderThumbView();
+        scheduleSave();
+        toast('図面に配置しました');
+        return;
+      }
+    }
+  }
+  toast('地図/図面の上にドロップしてください');
 }
 
 // ── DRAWING VIEW ─────────────────────────────────────────
@@ -951,15 +1136,13 @@ function renderDrawingTabs(){
 
 function currentDrawing(){
   const p = currentProject();
-  return p.drawings.find(d=>d.id===currentDrawingId) || null;
+  return p ? (p.drawings.find(d=>d.id===currentDrawingId) || null) : null;
 }
 
 function renderDrawingView(){
-  const p = currentProject();
   const d = currentDrawing();
   const hasDrawing = !!d;
   document.getElementById('drawingScroll').style.display = hasDrawing ? 'block' : 'none';
-  document.getElementById('drawAddBtn').style.display = hasDrawing ? 'flex' : 'none';
   document.querySelector('.zoomCtrl').style.display = hasDrawing ? 'flex' : 'none';
   document.getElementById('drawingEmpty').style.display = hasDrawing ? 'none' : 'block';
   if(!hasDrawing) return;
@@ -984,8 +1167,41 @@ function renderDrawingPins(){
     el.style.left = ph.x+'%';
     el.style.top = ph.y+'%';
     el.innerHTML = `<div class="pin${ph.id===activePhotoId?' active':''}"><span>${idx+1}</span></div>`;
-    el.addEventListener('click', (e)=>{ e.stopPropagation(); openPanel(ph.id); });
+    makeDrawingPinDraggable(el, ph);
     inner.appendChild(el);
+  });
+}
+
+function makeDrawingPinDraggable(el, ph){
+  el.addEventListener('pointerdown', e=>{
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX, startY = e.clientY;
+    let moved = false, pendingX, pendingY;
+    function onMove(ev){
+      const dx = ev.clientX-startX, dy = ev.clientY-startY;
+      if(!moved && Math.hypot(dx,dy) > 6) moved = true;
+      if(moved){
+        const rect = document.getElementById('drawingInner').getBoundingClientRect();
+        let x = (ev.clientX-rect.left)/rect.width*100;
+        let y = (ev.clientY-rect.top)/rect.height*100;
+        x = Math.max(0, Math.min(100, x));
+        y = Math.max(0, Math.min(100, y));
+        el.style.left = x+'%'; el.style.top = y+'%';
+        pendingX = x; pendingY = y;
+      }
+    }
+    function onUp(){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      if(moved && pendingX!==undefined){
+        ph.x = pendingX; ph.y = pendingY;
+        scheduleSave();
+      }else if(!moved){
+        openPanel(ph.id);
+      }
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp, { once:true });
   });
 }
 
@@ -1060,44 +1276,6 @@ function pdfToImage(file){
   });
 }
 
-function startDrawingPhotoUpload(){
-  document.getElementById('drawingFileInput').click();
-}
-async function onDrawingPhotoFileChosen(e){
-  const file = e.target.files[0];
-  e.target.value = '';
-  if(!file) return;
-  try{
-    let orientation = 1;
-    try{ const o = await exifr.orientation(file); if(o) orientation = o; }catch(err){}
-    const thumb = await compressImage(file, orientation);
-    pendingDrawingPhoto = { thumb, filename: file.name };
-    document.getElementById('placingBanner').classList.add('show');
-    document.getElementById('drawingInner').classList.add('placing');
-    toast('図面上をタップして配置位置を指定してください');
-  }catch(err){ console.error(err); toast('写真の読み込みに失敗しました'); }
-}
-function onDrawingClick(e){
-  if(!pendingDrawingPhoto) return;
-  const inner = document.getElementById('drawingInner');
-  const rect = inner.getBoundingClientRect();
-  const x = ((e.clientX - rect.left) / rect.width) * 100;
-  const y = ((e.clientY - rect.top) / rect.height) * 100;
-  const p = currentProject();
-  const d = currentDrawing();
-  p.photos.push({
-    id: uid(), kind:'drawing', drawingId: d.id, x, y, thumb: pendingDrawingPhoto.thumb,
-    uploader: getUserName(), filename: pendingDrawingPhoto.filename, time: new Date().toISOString(),
-    comments: [], votes: []
-  });
-  pendingDrawingPhoto = null;
-  document.getElementById('placingBanner').classList.remove('show');
-  inner.classList.remove('placing');
-  renderDrawingPins(); renderThumbView();
-  scheduleSave();
-  toast('写真を配置しました');
-}
-
 // ── THUMB VIEW ───────────────────────────────────────────
 function renderThumbView(){
   const p = currentProject();
@@ -1105,21 +1283,52 @@ function renderThumbView(){
   const grid = document.getElementById('thumbGrid');
   grid.innerHTML = '';
   const sortMode = document.querySelector('.sortbtn.active').dataset.sort;
-  let list = [...p.photos];
+
+  if(sortMode === 'location'){
+    renderThumbGrouped(p, grid);
+    return;
+  }
+  let list = p.photos.filter(ph=>ph.kind!=='pool');
   if(sortMode==='vote') list.sort((a,b)=> (b.votes||[]).length - (a.votes||[]).length);
   else list.sort((a,b)=> new Date(b.time) - new Date(a.time));
-
   document.getElementById('thumbEmpty').style.display = list.length ? 'none' : 'block';
-  list.forEach(ph=>{
-    const el = document.createElement('div');
-    el.className = 'tile';
-    const tag = ph.kind==='map' ? 'MAP' : (p.drawings.find(d=>d.id===ph.drawingId)||{}).name || '図面';
-    const votes = (ph.votes||[]).length;
-    el.innerHTML = `<img src="${ph.thumb}"><div class="tileTag"></div>${votes>0?`<div class="tileStar">★ ${votes}</div>`:''}`;
-    el.querySelector('.tileTag').textContent = tag;
-    el.addEventListener('click', ()=> openPanel(ph.id, true));
-    grid.appendChild(el);
+  list.forEach(ph=> grid.appendChild(makeTile(ph, p)));
+}
+
+function renderThumbGrouped(p, grid){
+  const mapPhotos = p.photos.filter(ph=>ph.kind==='map');
+  mapPhotos.sort((a,b)=> (b.lat-a.lat) || (b.lng-a.lng));
+  let any = mapPhotos.length > 0;
+  mapPhotos.forEach(ph=> grid.appendChild(makeTile(ph, p)));
+
+  p.drawings.forEach(d=>{
+    const pins = p.photos.filter(ph=>ph.kind==='drawing' && ph.drawingId===d.id);
+    if(!pins.length) return;
+    any = true;
+    pins.sort((a,b)=> new Date(a.time)-new Date(b.time));
+    grid.appendChild(makeDivider(d.name));
+    pins.forEach(ph=> grid.appendChild(makeTile(ph, p)));
   });
+  document.getElementById('thumbEmpty').style.display = any ? 'none' : 'block';
+}
+
+function makeDivider(title){
+  const el = document.createElement('div');
+  el.className = 'thumbDivider';
+  el.innerHTML = `<span class="line"></span><span class="dtitle"></span><span class="line"></span>`;
+  el.querySelector('.dtitle').textContent = title;
+  return el;
+}
+
+function makeTile(ph, p){
+  const el = document.createElement('div');
+  el.className = 'tile';
+  const tag = ph.kind==='map' ? 'MAP' : ((p.drawings.find(d=>d.id===ph.drawingId)||{}).name || '図面');
+  const votes = (ph.votes||[]).length;
+  el.innerHTML = `<img src="${ph.thumb}"><div class="tileTag"></div>${votes>0?`<div class="tileStar">★ ${votes}</div>`:''}`;
+  el.querySelector('.tileTag').textContent = tag;
+  el.addEventListener('click', ()=> openPanel(ph.id, true));
+  return el;
 }
 
 // ── PANEL (shared) ───────────────────────────────────────
@@ -1132,7 +1341,7 @@ function openPanel(id, fromThumb){
   const ph = findPhoto(id);
   if(!ph) return;
 
-  if(fromThumb){
+  if(fromThumb && ph.kind!=='pool'){
     if(ph.kind==='map'){ switchView('map'); }
     else { currentDrawingId = ph.drawingId; switchView('drawing'); renderDrawingTabs(); renderDrawingView(); }
   }
@@ -1142,10 +1351,13 @@ function openPanel(id, fromThumb){
   if(ph.kind==='map'){
     document.getElementById('panelLabelTitle').textContent = '地点';
     document.getElementById('panelCoord').textContent = `${ph.lat.toFixed(6)}, ${ph.lng.toFixed(6)}`;
-  }else{
+  }else if(ph.kind==='drawing'){
     const d = currentProject().drawings.find(x=>x.id===ph.drawingId);
     document.getElementById('panelLabelTitle').textContent = '図面';
     document.getElementById('panelCoord').textContent = d ? d.name : '—';
+  }else{
+    document.getElementById('panelLabelTitle').textContent = '状態';
+    document.getElementById('panelCoord').textContent = '未配置(プール)';
   }
   document.getElementById('panelUploader').textContent = ph.uploader || '不明';
   document.getElementById('panelTime').textContent = formatTime(ph.time);
@@ -1170,7 +1382,7 @@ function resetToGeotag(){
   renderMapView();
   if(map) map.panTo([ph.lat, ph.lng]);
   scheduleSave();
-  toast('ジオタグの位置に戻しました');
+  toast('元の位置に戻しました');
 }
 function closePanel(){
   activePhotoId = null;
@@ -1231,7 +1443,7 @@ function deleteActivePhoto(){
   p.photos = p.photos.filter(x=>x.id!==activePhotoId);
   closePanel();
   renderMapView(); if(currentView==='drawing') renderDrawingPins();
-  renderThumbView();
+  renderThumbView(); renderPoolTray();
   scheduleSave();
 }
 
@@ -1272,7 +1484,7 @@ async function compressImage(file, orientation, maxDim=1100, quality=0.72){
   return canvas.toDataURL('image/jpeg', quality);
 }
 
-// ── ROTATE (panel) ───────────────────────────────────────
+// ── ROTATE (panel・時計回りのみ) ──────────────────────────
 function rotateDataUrl(dataUrl, deg){
   return new Promise((resolve, reject)=>{
     const img = new Image();
@@ -1297,7 +1509,7 @@ async function rotateActivePhoto(deg){
   try{
     ph.thumb = await rotateDataUrl(ph.thumb, deg);
     document.getElementById('panelImg').src = ph.thumb;
-    renderThumbView();
+    renderThumbView(); renderPoolTray();
     if(currentView==='drawing') renderDrawingPins();
     scheduleSave();
   }catch(err){ console.error(err); toast('回転に失敗しました'); }
