@@ -149,6 +149,26 @@ html,body{margin:0;padding:0;height:100%;background:var(--paper);color:var(--ink
 #setup code{background:var(--blue-tint);color:var(--blue-deep);padding:1px 6px;border-radius:4px;font-size:12px;}
 #setup ol{font-size:13px;line-height:1.9;padding-left:20px;margin:0 0 6px;}
 
+/* ── SETTINGS MODAL ───────────────────────── */
+#settingsModal{
+  display:none;position:fixed;inset:0;background:rgba(29,43,50,.45);z-index:2200;
+  align-items:center;justify-content:center;padding:20px;
+}
+#settingsModal.open{display:flex;}
+#settingsModal .card{background:var(--panel);border-radius:var(--radius);padding:24px;max-width:420px;width:100%;}
+#settingsModal h2{margin:0 0 6px;font-size:15px;}
+#settingsModal p{font-size:12px;color:var(--muted);line-height:1.7;margin:0 0 14px;}
+#tokenOverrideInput{
+  width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;
+  font-size:12px;background:var(--paper);color:var(--ink);margin-bottom:12px;
+}
+#tokenOverrideInput:focus{outline:none;border-color:var(--blue);}
+.modalBtns{display:flex;gap:8px;}
+.primaryBtn{flex:1;background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px 0;font-family:inherit;font-size:13px;cursor:pointer;}
+.primaryBtn:hover{background:var(--blue-deep);}
+.ghostBtn{flex:1;background:none;border:1px solid var(--line);color:var(--warn);border-radius:8px;padding:9px 0;font-family:inherit;font-size:12px;cursor:pointer;}
+.closeBtn{display:block;margin:12px auto 0;background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:inherit;}
+
 /* ── TOAST ────────────────────────────────── */
 #toast{
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(60px);
@@ -175,6 +195,22 @@ html,body{margin:0;padding:0;height:100%;background:var(--paper);color:var(--ink
     <button class="iconbtn" id="reloadBtn" title="再読み込み">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
     </button>
+    <button class="iconbtn" id="settingsBtn" title="Dropbox設定">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="settingsModal">
+  <div class="card">
+    <h2>Dropboxトークンの上書き</h2>
+    <p>このブラウザだけで使うトークンを個別に設定できます。デバッグ用にindex.htmlを再アップロードしても、ここで一度設定すればこのブラウザの連携は切れません。</p>
+    <input type="password" id="tokenOverrideInput" placeholder="sl.u から始まるトークン" class="mono">
+    <div class="modalBtns">
+      <button id="tokenClearBtn" class="ghostBtn">保存済みトークンを削除</button>
+      <button id="tokenSaveBtn" class="primaryBtn">保存して再読み込み</button>
+    </div>
+    <button id="settingsClose" class="closeBtn">閉じる</button>
   </div>
 </div>
 
@@ -228,7 +264,7 @@ html,body{margin:0;padding:0;height:100%;background:var(--paper);color:var(--ink
 <script>
 // ══════════════════════════════════════════════════════════
 // 設定: ここにDropboxのアクセストークンを貼り付けてください
-const DBX_ACCESS_TOKEN = "sl.u.AGtEMK2ieaPyYDic2ko-SuYnPS2T0yDdntbk6h9HkH9EwYT5ckazkl0_Y1gpUioLL4F_53Y8_DxncUeV5u1YmN2tdXxix9sgcmxKhJh9g2ddS1MDfIVjrKgnMd1YJ2UsWo8ijgl2yJCKcc8f79RnMIBetnR4n4ajLOdmqJMHzQMERYow5jng7qGrVm-WA6jbwO15XsA0YjHgQY1zJIyg9l9Yy4WNz8C6B7VdlJyKFCAOxwK8qcWtnPX93Q4OXjPvvu5GKeWkoXWO7H3c5BlV3mI4ZDmxbol1VEKDDEznY9bInZjhirx4XhUAJo25dN-LRqNA36QKKj1PkZHszvwwX10T5M1H4DE6luoojzXnqPIy1_o1sRaWsxh2COIKpzzSdLBBOscDD2sgJ3qXqOCvva1nqFeW_OGOWC1L1ySAYxr8D_3CEMyWREfVazc8bhgu4NDBpCF1xgUykpptkvQC70ktLxVtAGaHAL-y_uIhIE_eSXsZ-fLuio2d8qxMI8smlQqf4DU0rsXE0xBbQ1DubX8jLU1GX0VPVzHxmWlZOUqgYGhsJLhZsxdo09844eGLNB0bl1TyaVglHr5blxGm11KqCHZ6SR25bucRyxhqW4RgcWILM90ATXnT2n8eTDyUyMlXGht4SZQVlOpo2iQ4lsIsMqhv45Y6d9xsCGz2bgSwZfEjL9Cs6CcA7gh0z4CGb6e2k1ufB4aCUmDT5vwgwaEvncwKUIBk4OqfwcZQetkB8INGO32U5Bi3NGoONHUx52d9iTefQGqhrnmiGgoifpLUdthNfLlPef4_-YV4t94Sa9YitlOv8-_iWVt4QncMPdkIb4KCi1xs0LsiWMEMNBLjXWGnaU065_fxMs-2Gq0aXim8NGYvF8JEQTr7M6Zkoro6cPTlsp8HE4I6vYLZNl-ncVzUV4woCruwLBcW2meuso9Bj-D0RiFtjFLyVZsZyTL8RN0QJtPgLhU2QWdJNuxSbh5YWUnbKg60OYK8C2xeHCGWf3ZT_Xvxf6bMlbc3b2onWEnalY6ZsXecUd2BfnCD9TnlBg32_FDtod12MgclDmEo2mcJ_umg9MpznKW0KtZQ31O6CZ4IixVSYZky9NVgFR7vW36pujmNJGc_vpODIo_holubAK1Mzvy1wMl0JOeH4vQDh4xcFY6eK-_tNHj7fZb-bBwHK7pMFmC_wgLfhumN-hrhF15VK3YDMMEKUOsgZMBUT0s1mTmhMSi3e9yKEpb4g6oQywgfrzfkQ9FKEZwSwFrKaA95oasRAux3hg6IFXjegik4xpeSA2b3Vi4xns1QmDKOyu6C4zqn18uyp5Uqal6tS-1ZHcynULGtfvQ";
+const DBX_ACCESS_TOKEN = "ここにDropboxのアクセストークンを貼り付け";
 const DBX_DATA_PATH = "/data.json";
 // ══════════════════════════════════════════════════════════
 
@@ -252,14 +288,31 @@ function setSync(state, msg){
   document.getElementById('syncMsg').textContent = msg;
 }
 
+// ── TOKEN ────────────────────────────────────────────────
+// localStorageに保存済みのトークンがあれば常にそちらを優先する。
+// なければソース埋め込みのDBX_ACCESS_TOKENを使い、そのままlocalStorageにも保存しておく。
+// こうすることで、後からindex.htmlを何度再アップロードしても(プレースホルダのままでも)
+// 一度連携済みのブラウザではDropbox連携が切れない。
+const LS_TOKEN_KEY = 'fieldmap_dbx_token';
+function getToken(){
+  const stored = localStorage.getItem(LS_TOKEN_KEY);
+  if(stored) return stored;
+  if(DBX_ACCESS_TOKEN && DBX_ACCESS_TOKEN.indexOf('ここに') !== 0){
+    localStorage.setItem(LS_TOKEN_KEY, DBX_ACCESS_TOKEN);
+    return DBX_ACCESS_TOKEN;
+  }
+  return null;
+}
+
 // ── INIT ─────────────────────────────────────────────────
 function init(){
-  if(!DBX_ACCESS_TOKEN || DBX_ACCESS_TOKEN.indexOf('ここに') === 0){
+  const token = getToken();
+  if(!token){
     document.getElementById('setup').style.display = 'flex';
     return;
   }
   document.getElementById('setup').style.display = 'none';
-  dbx = new Dropbox.Dropbox({ accessToken: DBX_ACCESS_TOKEN });
+  dbx = new Dropbox.Dropbox({ accessToken: token });
 
   map = L.map('map', { zoomControl:false, attributionControl:true }).setView([35.681, 139.767], 12);
   L.control.zoom({ position:'bottomleft' }).addTo(map);
@@ -290,6 +343,25 @@ function bindUI(){
     if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendComment(); }
   });
   document.getElementById('delBtn').addEventListener('click', deleteActivePhoto);
+
+  document.getElementById('settingsBtn').addEventListener('click', ()=>{
+    document.getElementById('tokenOverrideInput').value = '';
+    document.getElementById('settingsModal').classList.add('open');
+  });
+  document.getElementById('settingsClose').addEventListener('click', ()=>{
+    document.getElementById('settingsModal').classList.remove('open');
+  });
+  document.getElementById('tokenSaveBtn').addEventListener('click', ()=>{
+    const v = document.getElementById('tokenOverrideInput').value.trim();
+    if(!v){ toast('トークンを入力してください'); return; }
+    localStorage.setItem(LS_TOKEN_KEY, v);
+    location.reload();
+  });
+  document.getElementById('tokenClearBtn').addEventListener('click', ()=>{
+    if(!confirm('このブラウザに保存されたトークンを削除しますか？')) return;
+    localStorage.removeItem(LS_TOKEN_KEY);
+    location.reload();
+  });
 }
 
 // ── DROPBOX SYNC ─────────────────────────────────────────
