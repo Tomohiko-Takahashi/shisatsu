@@ -138,7 +138,8 @@ button{font-family:inherit;}
 .fitBtn svg{width:17px;height:17px;color:var(--blue-deep);}
 
 /* DRAWING VIEW */
-#drawingView{background:var(--paper);display:flex;flex-direction:column;}
+#drawingView{background:var(--paper);}
+#drawingView.active{display:flex;flex-direction:column;}
 #drawingTabs{
   flex:none;display:flex;gap:6px;padding:10px 12px;overflow-x:auto;
   background:var(--panel);border-bottom:1px solid var(--line);
@@ -219,6 +220,12 @@ button{font-family:inherit;}
 .starBtn svg{width:16px;height:16px;color:var(--star);}
 .starBtn.voted{border-color:var(--star);background:#FBF3E1;}
 .starBtn .voteCount{font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--star);}
+.narahodo{font-family:'RocknRoll One',sans-serif;}
+#resetGeoBtn{
+  margin-top:8px;width:100%;background:none;border:1px dashed var(--line);color:var(--blue-deep);
+  border-radius:8px;padding:8px 0;font-size:12px;cursor:pointer;display:none;
+}
+#resetGeoBtn:hover{border-color:var(--blue);background:var(--blue-tint);}
 
 /* ── SIDE PANEL (shared) ─────────────────── */
 #panel{
@@ -236,6 +243,13 @@ button{font-family:inherit;}
 #panelClose svg{width:14px;height:14px;}
 #panelImgWrap{background:#0F1B21;height:220px;flex:none;position:relative;}
 #panelImgWrap img{width:100%;height:100%;object-fit:contain;}
+#rotateCtrl{position:absolute;left:8px;bottom:8px;display:flex;gap:6px;}
+#rotateCtrl button{
+  width:30px;height:30px;border-radius:7px;border:none;background:rgba(255,255,255,.15);
+  color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+#rotateCtrl button:hover{background:rgba(255,255,255,.28);}
+#rotateCtrl svg{width:15px;height:15px;}
 #panelMeta{padding:14px 16px;border-bottom:1px solid var(--line);flex:none;}
 #panelMeta .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;}
 #panelMeta .coord{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--blue-deep);margin-bottom:8px;}
@@ -376,7 +390,13 @@ button{font-family:inherit;}
 <!-- ══════════ SIDE PANEL ══════════ -->
 <div id="panel">
   <button id="panelClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-  <div id="panelImgWrap"><img id="panelImg" src="" alt=""></div>
+  <div id="panelImgWrap">
+    <img id="panelImg" src="" alt="">
+    <div id="rotateCtrl">
+      <button id="rotateLeftBtn" title="左に回転"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+      <button id="rotateRightBtn" title="右に回転"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+    </div>
+  </div>
   <div id="panelMeta">
     <div class="label" id="panelLabelTitle">地点</div>
     <div class="coord mono" id="panelCoord">—</div>
@@ -385,10 +405,11 @@ button{font-family:inherit;}
     <div id="panelActions">
       <button class="starBtn" id="starBtn">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z"/></svg>
-        なるほど！<span class="voteCount" id="voteCount">0</span>
+        <span class="narahodo">ナルホド！</span><span class="voteCount" id="voteCount">0</span>
       </button>
       <button id="delBtn">削除</button>
     </div>
+    <button id="resetGeoBtn">📍 ジオタグ位置に戻す</button>
   </div>
   <div id="comments"></div>
   <div id="commentForm">
@@ -608,6 +629,9 @@ function bindUI(){
   });
   document.getElementById('delBtn').addEventListener('click', deleteActivePhoto);
   document.getElementById('starBtn').addEventListener('click', toggleVote);
+  document.getElementById('resetGeoBtn').addEventListener('click', resetToGeotag);
+  document.getElementById('rotateLeftBtn').addEventListener('click', ()=>rotateActivePhoto(-90));
+  document.getElementById('rotateRightBtn').addEventListener('click', ()=>rotateActivePhoto(90));
 
   // settings
   document.getElementById('settingsBtn').addEventListener('click', ()=>{
@@ -672,7 +696,11 @@ function migrateIfNeeded(){
   DB.projects.forEach(p=>{
     p.drawings = p.drawings || [];
     p.photos = p.photos || [];
-    p.photos.forEach(ph=>{ ph.votes = ph.votes || []; ph.comments = ph.comments || []; });
+    p.photos.forEach(ph=>{
+      ph.votes = ph.votes || [];
+      ph.comments = ph.comments || [];
+      if(ph.kind==='map' && ph.geoLat===undefined){ ph.geoLat = ph.lat; ph.geoLng = ph.lng; }
+    });
   });
 }
 
@@ -791,7 +819,15 @@ function renderMapView(){
       className:'', html:`<div class="pin${ph.id===activePhotoId?' active':''}"><span>${idx+1}</span></div>`,
       iconSize:[26,26], iconAnchor:[13,26]
     });
-    L.marker([ph.lat, ph.lng], { icon }).addTo(markersLayer).on('click', ()=>openPanel(ph.id));
+    const marker = L.marker([ph.lat, ph.lng], { icon, draggable:true }).addTo(markersLayer);
+    marker.on('click', ()=>openPanel(ph.id));
+    marker.on('dragend', ()=>{
+      const ll = marker.getLatLng();
+      ph.lat = ll.lat; ph.lng = ll.lng;
+      if(ph.id===activePhotoId) document.getElementById('panelCoord').textContent = `${ph.lat.toFixed(6)}, ${ph.lng.toFixed(6)}`;
+      updateResetGeoVisibility(ph);
+      scheduleSave();
+    });
   });
 }
 function fitAll(){
@@ -822,7 +858,8 @@ async function onMapFilesChosen(e){
       try{ const o = await exifr.orientation(file); if(o) orientation = o; }catch(e){}
       const thumb = await compressImage(file, orientation);
       p.photos.push({
-        id: uid(), kind:'map', lat: gps.latitude, lng: gps.longitude, thumb,
+        id: uid(), kind:'map', lat: gps.latitude, lng: gps.longitude,
+        geoLat: gps.latitude, geoLng: gps.longitude, thumb,
         uploader: name, filename: file.name, time: captureTime || new Date().toISOString(),
         comments: [], votes: []
       });
@@ -1056,9 +1093,27 @@ function openPanel(id, fromThumb){
   document.getElementById('panelUploader').textContent = ph.uploader || '不明';
   document.getElementById('panelTime').textContent = formatTime(ph.time);
   updateStarBtn(ph);
+  updateResetGeoVisibility(ph);
   renderComments(ph);
   document.getElementById('panel').classList.add('open');
   if(ph.kind==='map' && map) map.panTo([ph.lat, ph.lng]);
+}
+function updateResetGeoVisibility(ph){
+  const btn = document.getElementById('resetGeoBtn');
+  if(ph.kind !== 'map'){ btn.style.display = 'none'; return; }
+  const moved = ph.geoLat!==undefined && (ph.lat!==ph.geoLat || ph.lng!==ph.geoLng);
+  btn.style.display = moved ? 'block' : 'none';
+}
+function resetToGeotag(){
+  const ph = findPhoto(activePhotoId);
+  if(!ph || ph.kind!=='map' || ph.geoLat===undefined) return;
+  ph.lat = ph.geoLat; ph.lng = ph.geoLng;
+  document.getElementById('panelCoord').textContent = `${ph.lat.toFixed(6)}, ${ph.lng.toFixed(6)}`;
+  updateResetGeoVisibility(ph);
+  renderMapView();
+  if(map) map.panTo([ph.lat, ph.lng]);
+  scheduleSave();
+  toast('ジオタグの位置に戻しました');
 }
 function closePanel(){
   activePhotoId = null;
@@ -1158,6 +1213,37 @@ async function compressImage(file, orientation, maxDim=1100, quality=0.72){
   applyOrientation(ctx, orientation, dw, dh);
   ctx.drawImage(img, 0, 0, dw, dh);
   return canvas.toDataURL('image/jpeg', quality);
+}
+
+// ── ROTATE (panel) ───────────────────────────────────────
+function rotateDataUrl(dataUrl, deg){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const swapped = Math.abs(deg) === 90 || Math.abs(deg) === 270;
+      const canvas = document.createElement('canvas');
+      canvas.width = swapped ? img.height : img.width;
+      canvas.height = swapped ? img.width : img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.translate(canvas.width/2, canvas.height/2);
+      ctx.rotate(deg * Math.PI / 180);
+      ctx.drawImage(img, -img.width/2, -img.height/2);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+async function rotateActivePhoto(deg){
+  const ph = findPhoto(activePhotoId);
+  if(!ph) return;
+  try{
+    ph.thumb = await rotateDataUrl(ph.thumb, deg);
+    document.getElementById('panelImg').src = ph.thumb;
+    renderThumbView();
+    if(currentView==='drawing') renderDrawingPins();
+    scheduleSave();
+  }catch(err){ console.error(err); toast('回転に失敗しました'); }
 }
 
 init();
