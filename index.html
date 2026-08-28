@@ -446,12 +446,12 @@ button{font-family:inherit;}
 
 <div class="modalBg" id="settingsModal">
   <div class="card">
-    <h2>Dropboxトークンの上書き</h2>
-    <p>このブラウザだけで使うトークンを個別に設定できます。デバッグ用にindex.htmlを再アップロードしても、ここで一度設定すればこのブラウザの連携は切れません。</p>
-    <input type="password" id="tokenOverrideInput" placeholder="sl.u から始まるトークン" class="mono">
+    <h2>Dropbox連携の設定</h2>
+    <p>App Keyは<a href="https://www.dropbox.com/developers/apps" target="_blank">Dropbox App Console</a>の作成済みアプリの設定画面に表示されています。「連携する」を押すとDropboxのログイン画面に移動し、戻ってくると自動で保存されます(この作業は最初の1回だけで大丈夫です)。</p>
+    <input type="text" id="settingsAppKeyInput" placeholder="App Key" class="mono">
+    <button class="primaryBtn" id="settingsConnectBtn" style="width:100%;margin-bottom:10px;">Dropboxと連携する</button>
     <div class="modalBtns">
-      <button id="tokenClearBtn" class="ghostBtn">保存済みトークンを削除</button>
-      <button id="tokenSaveBtn" class="primaryBtn">保存して再読み込み</button>
+      <button id="tokenClearBtn" class="ghostBtn">保存済みの連携情報を削除</button>
     </div>
     <button id="settingsClose" class="closeBtn">閉じる</button>
   </div>
@@ -459,16 +459,17 @@ button{font-family:inherit;}
 
 <div id="setup">
   <div class="card">
-    <h2>Dropboxのアクセストークンが未設定です</h2>
-    <p>このファイルのソース内、<code>DBX_ACCESS_TOKEN</code> の値にトークンを貼り付けてから、GitHub Pagesへデプロイしてください。一度設定すれば、メンバーは連携作業なしでそのまま使えます。</p>
+    <h2>Dropboxとの連携が必要です</h2>
+    <p>最初に一度だけ、下の手順でログイン連携してください。連携すると裏側で自動更新される仕組みになるので、以降トークンを手動で発行し直す必要は一切ありません。</p>
     <ol>
-      <li><a href="https://www.dropbox.com/developers/apps" target="_blank">Dropbox App Console</a>を開き、Create app → Scoped access → App folder を選択</li>
+      <li><a href="https://www.dropbox.com/developers/apps" target="_blank">Dropbox App Console</a>を開き、Create app → Scoped access → App folder を選択してアプリを作成</li>
       <li>Permissions タブで <code>files.content.write</code> と <code>files.content.read</code> にチェック → Submit</li>
-      <li>Settings タブ → OAuth 2 → Generated access token → Generate をクリック</li>
-      <li>生成されたトークン(<code>sl.xxxx…</code>)をコピーし、下の欄に貼り付けてください</li>
+      <li>Settings タブ → OAuth 2 → Redirect URIs に、今このページを開いているURLをそのまま貼り付けて Add</li>
+      <li>同じSettingsタブ上部にある <code>App key</code> をコピーし、下の欄に貼り付ける</li>
     </ol>
-    <input type="password" id="setupTokenInput" placeholder="sl.u から始まるトークン" class="mono" style="margin-top:10px;">
-    <button class="primaryBtn" id="setupTokenSave" style="width:100%;">保存して起動</button>
+    <input type="text" id="setupAppKeyInput" placeholder="App Key" class="mono" style="margin-top:10px;">
+    <button class="primaryBtn" id="setupConnectBtn" style="width:100%;">Dropboxと連携する</button>
+    <p id="setupStatus" style="margin-top:10px;"></p>
   </div>
 </div>
 
@@ -476,8 +477,10 @@ button{font-family:inherit;}
 
 <script>
 // ══════════════════════════════════════════════════════════
-// 設定: ここにDropboxのアクセストークンを貼り付けてください
-const DBX_ACCESS_TOKEN = "ここにDropboxのアクセストークンを貼り付け";
+// 設定: 下の2つは初回の連携が終わると自動でlocalStorageに保存されるので、
+// ここに直接書き込むのは「チーム全員に配布するindex.html」を作る時だけでOK
+const DBX_APP_KEY = "ここにDropboxのApp Keyを貼り付け";
+const DBX_REFRESH_TOKEN = "ここにDropboxのリフレッシュトークンを貼り付け";
 const DBX_DATA_PATH = "/data.json";
 // ══════════════════════════════════════════════════════════
 
@@ -495,6 +498,14 @@ let currentDrawingId = null;
 let activePhotoId = null;
 let pendingDrawingPhoto = null;
 let drawingZoom = 1;
+
+// ビュー表示切り替え: CSSの詳細度に左右されないよう、インラインstyleで直接制御する
+const VIEW_DISPLAY = { mapView:'block', drawingView:'flex', thumbView:'block' };
+function showPview(viewId){
+  document.querySelectorAll('.pview').forEach(v=>{
+    v.style.display = (v.id === viewId) ? (VIEW_DISPLAY[v.id] || 'block') : 'none';
+  });
+}
 
 // ── UTIL ─────────────────────────────────────────────────
 function toast(msg){
@@ -520,34 +531,82 @@ function formatTime(iso){
 }
 function currentProject(){ return DB.projects.find(p=>p.id===currentProjectId) || null; }
 
-// ── TOKEN ────────────────────────────────────────────────
-const LS_TOKEN_KEY = 'fieldmap_dbx_token';
-function getToken(){
-  const stored = localStorage.getItem(LS_TOKEN_KEY);
-  if(stored) return stored;
-  if(DBX_ACCESS_TOKEN && DBX_ACCESS_TOKEN.indexOf('ここに') !== 0){
-    localStorage.setItem(LS_TOKEN_KEY, DBX_ACCESS_TOKEN);
-    return DBX_ACCESS_TOKEN;
+// ── DROPBOX AUTH (PKCE・リフレッシュトークン方式) ─────────
+// アクセストークンは4時間程度で失効するため使わない。
+// 最初の1回だけログイン連携し、失効しないリフレッシュトークンを保存する。
+// 以降はDropbox SDKが裏側で自動的に新しいアクセストークンに更新し続ける。
+const LS_APPKEY_KEY = 'fieldmap_dbx_appkey';
+const LS_REFRESH_KEY = 'fieldmap_dbx_refresh';
+function redirectUri(){ return location.origin + location.pathname; }
+
+function getCreds(){
+  let appKey = localStorage.getItem(LS_APPKEY_KEY);
+  let refreshToken = localStorage.getItem(LS_REFRESH_KEY);
+  if(!appKey && DBX_APP_KEY && DBX_APP_KEY.indexOf('ここに') !== 0){
+    appKey = DBX_APP_KEY; localStorage.setItem(LS_APPKEY_KEY, appKey);
   }
-  return null;
+  if(!refreshToken && DBX_REFRESH_TOKEN && DBX_REFRESH_TOKEN.indexOf('ここに') !== 0){
+    refreshToken = DBX_REFRESH_TOKEN; localStorage.setItem(LS_REFRESH_KEY, refreshToken);
+  }
+  return (appKey && refreshToken) ? { appKey, refreshToken } : null;
+}
+
+function startDropboxAuth(appKey){
+  if(!appKey){ toast('App Keyを入力してください'); return; }
+  localStorage.setItem(LS_APPKEY_KEY, appKey);
+  const dbxAuth = new Dropbox.DropboxAuth({ clientId: appKey });
+  dbxAuth.getAuthenticationUrl(redirectUri(), undefined, 'code', 'offline', undefined, undefined, true)
+    .then(url=>{
+      sessionStorage.setItem('fieldmap_code_verifier', dbxAuth.getCodeVerifier());
+      window.location.assign(url);
+    })
+    .catch(err=>{ console.error(err); toast('連携URLの生成に失敗しました'); });
+}
+
+// ページ読み込み時、Dropboxからの戻り(?code=...)を処理してリフレッシュトークンを取得する
+async function handleOAuthRedirect(){
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  if(!code) return;
+  const appKey = localStorage.getItem(LS_APPKEY_KEY);
+  const verifier = sessionStorage.getItem('fieldmap_code_verifier');
+  const statusEl = document.getElementById('setupStatus');
+  if(!appKey || !verifier){
+    history.replaceState({}, '', redirectUri());
+    return;
+  }
+  if(statusEl) statusEl.textContent = '連携中…';
+  try{
+    const dbxAuth = new Dropbox.DropboxAuth({ clientId: appKey });
+    dbxAuth.setCodeVerifier(verifier);
+    const res = await dbxAuth.getAccessTokenFromCode(redirectUri(), code);
+    const refreshToken = res.result.refresh_token;
+    if(!refreshToken) throw new Error('refresh_token missing');
+    localStorage.setItem(LS_REFRESH_KEY, refreshToken);
+    if(statusEl) statusEl.textContent = '連携できました。起動します…';
+  }catch(err){
+    console.error(err);
+    if(statusEl) statusEl.textContent = '連携に失敗しました。App KeyとRedirect URIの設定を確認して、もう一度お試しください。';
+  }
+  sessionStorage.removeItem('fieldmap_code_verifier');
+  history.replaceState({}, '', redirectUri());
 }
 
 // ── INIT ─────────────────────────────────────────────────
-function init(){
-  document.getElementById('setupTokenSave').addEventListener('click', ()=>{
-    const v = document.getElementById('setupTokenInput').value.trim();
-    if(!v){ toast('トークンを入力してください'); return; }
-    localStorage.setItem(LS_TOKEN_KEY, v);
-    location.reload();
+async function init(){
+  document.getElementById('setupConnectBtn').addEventListener('click', ()=>{
+    startDropboxAuth(document.getElementById('setupAppKeyInput').value.trim());
   });
 
-  const token = getToken();
-  if(!token){
+  await handleOAuthRedirect();
+
+  const creds = getCreds();
+  if(!creds){
     document.getElementById('setup').style.display = 'flex';
     return;
   }
   document.getElementById('setup').style.display = 'none';
-  dbx = new Dropbox.Dropbox({ accessToken: token });
+  dbx = new Dropbox.Dropbox({ clientId: creds.appKey, refreshToken: creds.refreshToken });
 
   map = L.map('map', { zoomControl:false, attributionControl:true }).setView([35.681, 139.767], 12);
   L.control.zoom({ position:'bottomleft' }).addTo(map);
@@ -635,19 +694,17 @@ function bindUI(){
 
   // settings
   document.getElementById('settingsBtn').addEventListener('click', ()=>{
-    document.getElementById('tokenOverrideInput').value = '';
+    document.getElementById('settingsAppKeyInput').value = localStorage.getItem(LS_APPKEY_KEY) || '';
     document.getElementById('settingsModal').classList.add('open');
   });
   document.getElementById('settingsClose').addEventListener('click', ()=> document.getElementById('settingsModal').classList.remove('open'));
-  document.getElementById('tokenSaveBtn').addEventListener('click', ()=>{
-    const v = document.getElementById('tokenOverrideInput').value.trim();
-    if(!v){ toast('トークンを入力してください'); return; }
-    localStorage.setItem(LS_TOKEN_KEY, v);
-    location.reload();
+  document.getElementById('settingsConnectBtn').addEventListener('click', ()=>{
+    startDropboxAuth(document.getElementById('settingsAppKeyInput').value.trim());
   });
   document.getElementById('tokenClearBtn').addEventListener('click', ()=>{
-    if(!confirm('このブラウザに保存されたトークンを削除しますか？')) return;
-    localStorage.removeItem(LS_TOKEN_KEY);
+    if(!confirm('このブラウザに保存された連携情報を削除しますか？')) return;
+    localStorage.removeItem(LS_APPKEY_KEY);
+    localStorage.removeItem(LS_REFRESH_KEY);
     location.reload();
   });
 }
@@ -786,7 +843,7 @@ function renderProjectScreen(){
   document.getElementById('newProjBtn').style.display = 'none';
   resizeLayout();
 
-  document.querySelectorAll('.pview').forEach(v=> v.classList.toggle('active', v.id === currentView+'View'));
+  showPview(currentView+'View');
 
   renderMapView();
   renderDrawingTabs();
@@ -798,7 +855,7 @@ function renderProjectScreen(){
 function switchView(v){
   currentView = v;
   document.querySelectorAll('.tabbtn').forEach(b=> b.classList.toggle('active', b.dataset.view===v));
-  document.querySelectorAll('.pview').forEach(el=> el.classList.toggle('active', el.id===v+'View'));
+  showPview(v+'View');
   if(v==='map'){ setTimeout(()=> map && map.invalidateSize(), 60); }
   if(v==='drawing'){ setTimeout(updateDrawingInnerSize, 60); }
   if(v==='thumb'){ renderThumbView(); }
