@@ -307,8 +307,10 @@ button{font-family:inherit;}
 #panelMeta .coord{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--blue-deep);margin-bottom:8px;}
 #panelMeta .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:2px;}
 #panelMeta .row b{color:var(--ink);font-weight:500;}
-#panelActions{display:flex;align-items:center;gap:10px;margin-top:12px;}
-#delBtn{margin-left:auto;font-size:11px;color:var(--warn);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;}
+#panelMetaActions{margin-top:12px;}
+#delBtn{font-size:11px;color:var(--warn);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;}
+#panelVoteRow{padding:10px 16px;border-top:1px solid var(--line);flex:none;}
+#panelVoteRow .starBtn{width:100%;justify-content:center;}
 
 #comments{flex:1;overflow-y:auto;padding:12px 16px;}
 .comment{margin-bottom:14px;}
@@ -501,16 +503,18 @@ button{font-family:inherit;}
     <div class="coord mono" id="panelCoord">—</div>
     <div class="row"><span>撮影</span><b id="panelUploader">—</b></div>
     <div class="row"><span>日時</span><b class="mono" id="panelTime">—</b></div>
-    <div id="panelActions">
-      <button class="starBtn" id="starBtn">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z"/></svg>
-        <span class="narahodo">ナルホド！</span><span class="voteCount" id="voteCount">0</span>
-      </button>
+    <div id="panelMetaActions">
       <button id="delBtn">プールに戻す</button>
     </div>
     <button id="resetGeoBtn">📍 元の位置に戻す</button>
   </div>
   <div id="comments"></div>
+  <div id="panelVoteRow">
+    <button class="starBtn" id="starBtn">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01L12 2z"/></svg>
+      <span class="narahodo">ナルホド！</span><span class="voteCount" id="voteCount">0</span>
+    </button>
+  </div>
   <div id="commentForm">
     <input type="text" id="commentNameInput" placeholder="名前" maxlength="16">
     <div id="commentInputRow">
