@@ -172,15 +172,27 @@ button{font-family:inherit;}
   position:absolute;left:0;right:0;bottom:0;height:92px;background:var(--panel);
   border-top:1px solid var(--line);z-index:850;display:flex;flex-direction:column;
 }
-.poolTrayHead{font-size:10px;color:var(--muted);padding:6px 12px 2px;flex:none;}
+.poolTrayHead{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--muted);padding:6px 12px 2px;flex:none;gap:8px;}
 .poolTrayHead b{color:var(--blue-deep);font-family:'JetBrains Mono',monospace;}
+.poolTrayHead span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.poolRefreshBtn{flex:none;font-size:10px;color:var(--warn);background:none;border:none;cursor:pointer;padding:0;}
+.poolRefreshBtn:hover{text-decoration:underline;}
+.poolSplit{flex:1;display:flex;overflow:hidden;}
+.poolDivider{width:1px;flex:none;background:var(--line);margin:8px 2px;}
 .poolItems{flex:1;display:flex;gap:8px;align-items:center;padding:0 12px 8px;overflow-x:auto;}
+.poolItemsDraw{flex:0 0 32%;}
 .poolAddChip{
   flex:none;width:auto;height:52px;padding:0 12px;border-radius:8px;border:1.5px dashed var(--blue);background:var(--blue-tint);
   color:var(--blue-deep);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;
 }
 .poolAddChip svg{width:17px;height:17px;}
 .poolAddChip span{font-size:9px;white-space:nowrap;line-height:1;}
+.poolChip.drawingChip{border-color:var(--blue);border-width:2px;}
+.drawMarker{
+  width:44px;height:44px;border-radius:8px;overflow:hidden;background:#000;
+  border:2px solid var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.4);
+}
+.drawMarker img{width:100%;height:100%;object-fit:cover;display:block;}
 .poolChip{
   position:relative;flex:none;width:52px;height:52px;border-radius:8px;overflow:hidden;background:#000;
   border:1px solid var(--line);cursor:grab;touch-action:none;
@@ -273,10 +285,18 @@ button{font-family:inherit;}
 #delBtn{margin-left:auto;font-size:11px;color:var(--warn);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;}
 
 #comments{flex:1;overflow-y:auto;padding:12px 16px;}
-.comment{margin-bottom:12px;}
+.comment{margin-bottom:14px;}
 .comment .author{font-size:12px;font-weight:700;color:var(--blue-deep);}
 .comment .time{font-size:10px;color:var(--muted);margin-left:6px;font-family:'JetBrains Mono',monospace;}
 .comment .text{font-size:13px;line-height:1.5;margin-top:2px;white-space:pre-wrap;}
+.commentActions{display:flex;gap:10px;margin-top:3px;}
+.commentActions button{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;}
+.commentActions button:hover{color:var(--blue-deep);text-decoration:underline;}
+.commentActions button.commentDelBtn:hover{color:var(--warn);}
+.commentEditArea{
+  width:100%;margin-top:4px;border:1px solid var(--blue);border-radius:6px;padding:6px 8px;
+  font-family:inherit;font-size:13px;resize:vertical;min-height:50px;background:var(--paper);color:var(--ink);
+}
 #noComments{color:var(--muted);font-size:12px;text-align:center;padding:20px 0;}
 
 #commentForm{border-top:1px solid var(--line);padding:10px 16px;flex:none;display:flex;flex-direction:column;gap:6px;}
@@ -285,10 +305,10 @@ button{font-family:inherit;}
   font-family:inherit;font-size:11px;background:var(--paper);color:var(--ink);
 }
 #commentNameInput:focus{outline:none;border-color:var(--blue);}
-#commentInputRow{display:flex;gap:8px;}
+#commentInputRow{display:flex;gap:8px;align-items:flex-end;}
 #commentInput{
   flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;
-  font-family:inherit;font-size:13px;resize:none;height:36px;background:var(--paper);color:var(--ink);
+  font-family:inherit;font-size:13px;resize:vertical;height:64px;background:var(--paper);color:var(--ink);
 }
 #commentInput:focus{outline:none;border-color:var(--blue);}
 #commentSend{
@@ -387,8 +407,15 @@ button{font-family:inherit;}
     <div class="emptyState" id="mapEmpty"><div class="big">まだ写真がありません</div><div class="sm">下のプールの「+」から追加してください</div></div>
     <button class="fitBtn" id="fitBtn" title="全体表示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
     <div class="poolTray">
-      <div class="poolTrayHead">プール <b class="poolCount">0</b>件・タップで詳細、ドラッグして地図に配置</div>
-      <div class="poolItems"></div>
+      <div class="poolTrayHead">
+        <span>写真プール <b id="mapPoolCount">0</b>件・図面プール <b id="mapDrawPoolCount">0</b>件・ドラッグして配置</span>
+        <button class="poolRefreshBtn" id="mapPoolRefreshBtn">プールのリフレッシュ</button>
+      </div>
+      <div class="poolSplit">
+        <div class="poolItems" id="mapPoolItems"></div>
+        <div class="poolDivider"></div>
+        <div class="poolItems poolItemsDraw" id="mapDrawPoolItems"></div>
+      </div>
     </div>
   </div>
 
@@ -403,8 +430,11 @@ button{font-family:inherit;}
       </div>
     </div>
     <div class="poolTray">
-      <div class="poolTrayHead">プール <b class="poolCount">0</b>件・タップで詳細、ドラッグして図面に配置</div>
-      <div class="poolItems"></div>
+      <div class="poolTrayHead">
+        <span>プール <b id="drawPoolCount">0</b>件・タップで詳細、ドラッグして図面に配置</span>
+        <button class="poolRefreshBtn" id="drawPoolRefreshBtn">プールのリフレッシュ</button>
+      </div>
+      <div class="poolItems" id="drawPoolItems"></div>
     </div>
   </div>
 
@@ -483,11 +513,12 @@ button{font-family:inherit;}
 
 <div class="modalBg" id="uploadNameModal">
   <div class="card">
-    <h2>アップロードする人の名前</h2>
+    <h2><span id="uploadConfirmCount">0</span>枚の写真をアップロード</h2>
+    <p>アップロードする人の名前を入力してください。</p>
     <input type="text" id="uploadNameInput" placeholder="名前" maxlength="16">
     <div class="modalBtns">
       <button class="ghostBtn" id="uploadNameCancel">キャンセル</button>
-      <button class="primaryBtn" id="uploadNameNext">写真を選ぶ</button>
+      <button class="primaryBtn" id="uploadNameNext">アップロードする</button>
     </div>
   </div>
 </div>
@@ -738,15 +769,20 @@ function bindUI(){
   document.getElementById('projDeleteBtn').addEventListener('click', deleteProject);
 
   document.getElementById('fileInput').addEventListener('change', onFilesChosen);
-  document.getElementById('uploadNameCancel').addEventListener('click', ()=> document.getElementById('uploadNameModal').classList.remove('open'));
-  document.getElementById('uploadNameNext').addEventListener('click', ()=>{
+  document.getElementById('uploadNameCancel').addEventListener('click', ()=>{
+    pendingFiles = null;
+    document.getElementById('uploadNameModal').classList.remove('open');
+  });
+  document.getElementById('uploadNameNext').addEventListener('click', async ()=>{
     const name = document.getElementById('uploadNameInput').value.trim();
     if(!name){ toast('名前を入力してください'); return; }
     localStorage.setItem('fieldmap_upload_name', name);
     document.getElementById('uploadNameModal').classList.remove('open');
-    document.getElementById('fileInput').click();
+    await processPendingUpload(name);
   });
   document.getElementById('fitBtn').addEventListener('click', fitAll);
+  document.getElementById('mapPoolRefreshBtn').addEventListener('click', ()=> refreshPool('map'));
+  document.getElementById('drawPoolRefreshBtn').addEventListener('click', ()=> refreshPool(currentDrawingId));
 
   document.getElementById('drawEmptyBtn').addEventListener('click', openNewDrawModal);
   document.getElementById('zoomIn').addEventListener('click', ()=> setDrawingZoom(drawingZoom+0.25));
@@ -841,6 +877,8 @@ function migrateIfNeeded(){
       ph.votes = ph.votes || [];
       ph.comments = ph.comments || [];
       if(ph.kind==='map' && ph.geoLat===undefined){ ph.geoLat = ph.lat; ph.geoLng = ph.lng; }
+      if(ph.kind==='pool' && !ph.poolScope){ ph.poolScope = 'map'; }
+      ph.comments.forEach(c=>{ if(!c.id) c.id = uid(); });
     });
   });
 }
@@ -961,7 +999,7 @@ function renderProjectScreen(){
   renderDrawingTabs();
   renderDrawingView();
   renderThumbView();
-  renderPoolTray();
+  renderMapPoolTray(); renderDrawingPoolTray();
   setTimeout(()=>{ if(map) map.invalidateSize(); }, 60);
 }
 
@@ -972,7 +1010,7 @@ function switchView(v){
   if(v==='map'){ setTimeout(()=> map && map.invalidateSize(), 60); }
   if(v==='drawing'){ setTimeout(updateDrawingInnerSize, 60); }
   if(v==='thumb'){ renderThumbView(); }
-  renderPoolTray();
+  renderMapPoolTray(); renderDrawingPoolTray();
 }
 
 // ── MAP VIEW ─────────────────────────────────────────────
@@ -1000,25 +1038,53 @@ function renderMapView(){
       scheduleSave();
     });
   });
+
+  const placedDrawings = p.drawings.filter(d=> d.lat !== undefined);
+  placedDrawings.forEach(d=>{
+    const icon = L.divIcon({
+      className:'', html:`<div class="drawMarker"><img src="${d.image}"></div>`,
+      iconSize:[44,44], iconAnchor:[22,22]
+    });
+    const marker = L.marker([d.lat, d.lng], { icon, draggable:true }).addTo(markersLayer);
+    marker.on('click', ()=>{
+      currentDrawingId = d.id;
+      switchView('drawing');
+      renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray();
+    });
+    marker.on('dragend', ()=>{
+      const ll = marker.getLatLng();
+      d.lat = ll.lat; d.lng = ll.lng;
+      scheduleSave();
+    });
+  });
 }
 function fitAll(){
   const p = currentProject();
   const mapPhotos = p.photos.filter(ph=>ph.kind==='map');
-  if(!mapPhotos.length){ toast('写真がありません'); return; }
-  map.fitBounds(L.latLngBounds(mapPhotos.map(ph=>[ph.lat,ph.lng])), { padding:[40,40], maxZoom:17 });
+  const placedDrawings = p.drawings.filter(d=> d.lat !== undefined);
+  if(!mapPhotos.length && !placedDrawings.length){ toast('地図上に何もありません'); return; }
+  const points = [...mapPhotos.map(ph=>[ph.lat,ph.lng]), ...placedDrawings.map(d=>[d.lat,d.lng])];
+  map.fitBounds(L.latLngBounds(points), { padding:[40,40], maxZoom:17 });
 }
 
 // ── UPLOAD → 自動配置 or プール ──────────────────────────
-function openUploadNameModal(){
-  document.getElementById('uploadNameInput').value = localStorage.getItem('fieldmap_upload_name') || '';
-  document.getElementById('uploadNameModal').classList.add('open');
-}
-async function onFilesChosen(e){
+let pendingUploadScope = 'map';
+let pendingFiles = null;
+function onFilesChosen(e){
   const files = Array.from(e.target.files || []);
   e.target.value = '';
   if(!files.length) return;
+  pendingFiles = files;
+  document.getElementById('uploadConfirmCount').textContent = files.length;
+  document.getElementById('uploadNameInput').value = localStorage.getItem('fieldmap_upload_name') || '';
+  document.getElementById('uploadNameModal').classList.add('open');
+}
+async function processPendingUpload(name){
+  const files = pendingFiles;
+  pendingFiles = null;
+  if(!files || !files.length) return;
   const p = currentProject();
-  const name = localStorage.getItem('fieldmap_upload_name') || '匿名';
+  const scope = pendingUploadScope;
   let placed = 0, pooled = 0;
 
   for(const file of files){
@@ -1040,12 +1106,12 @@ async function onFilesChosen(e){
         p.photos.push({ ...base, kind:'map', lat:gps.latitude, lng:gps.longitude, geoLat:gps.latitude, geoLng:gps.longitude });
         placed++;
       }else{
-        p.photos.push({ ...base, kind:'pool' });
+        p.photos.push({ ...base, kind:'pool', poolScope: scope });
         pooled++;
       }
     }catch(err){ console.error(err); }
   }
-  renderMapView(); renderPoolTray(); renderThumbView();
+  renderMapView(); renderMapPoolTray(); renderDrawingPoolTray(); renderThumbView();
   scheduleSave();
   if(placed && pooled) toast(`${placed}件を地図に自動配置、${pooled}件をプールに追加しました`);
   else if(placed) toast(`${placed}件を地図に自動配置しました`);
@@ -1053,47 +1119,92 @@ async function onFilesChosen(e){
 }
 
 // ── POOL TRAY + ドラッグ配置 ──────────────────────────────
-function renderPoolTray(){
+function renderMapPoolTray(){
   const p = currentProject();
   if(!p) return;
-  const pool = p.photos.filter(ph=>ph.kind==='pool');
-  document.querySelectorAll('.poolItems').forEach(container=>{
-    container.innerHTML = '';
-    const addChip = document.createElement('button');
-    addChip.className = 'poolAddChip';
-    addChip.title = '写真を追加';
-    addChip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>写真を追加</span>';
-    addChip.addEventListener('click', openUploadNameModal);
-    container.appendChild(addChip);
-    pool.forEach(ph=>{
-      const chip = document.createElement('div');
-      chip.className = 'poolChip';
-      const img = document.createElement('img');
-      img.src = ph.thumb;
-      chip.appendChild(img);
-      const del = document.createElement('button');
-      del.className = 'poolChipDel';
-      del.textContent = '×';
-      del.title = '削除';
-      del.addEventListener('pointerdown', e=>{ e.stopPropagation(); });
-      del.addEventListener('click', e=>{ e.stopPropagation(); deletePoolPhoto(ph.id); });
-      chip.appendChild(del);
-      chip.addEventListener('pointerdown', e=>{ e.preventDefault(); startPoolDragMove(e, ph.id); });
-      container.appendChild(chip);
-    });
-  });
-  document.querySelectorAll('.poolCount').forEach(el=> el.textContent = pool.length);
+  const pool = p.photos.filter(ph=>ph.kind==='pool' && ph.poolScope==='map');
+  const unplacedDrawings = p.drawings.filter(d=> d.lat===undefined);
+
+  const photoContainer = document.getElementById('mapPoolItems');
+  photoContainer.innerHTML = '';
+  photoContainer.appendChild(makeAddChip('map'));
+  pool.forEach(ph=> photoContainer.appendChild(makePhotoChip(ph)));
+  document.getElementById('mapPoolCount').textContent = pool.length;
+
+  const drawContainer = document.getElementById('mapDrawPoolItems');
+  drawContainer.innerHTML = '';
+  unplacedDrawings.forEach(d=> drawContainer.appendChild(makeDrawingChip(d)));
+  document.getElementById('mapDrawPoolCount').textContent = unplacedDrawings.length;
 }
 
-function startPoolDragMove(e, photoId){
-  const ph0 = findPhoto(photoId);
-  if(!ph0) return;
+function renderDrawingPoolTray(){
+  const p = currentProject();
+  if(!p) return;
+  const container = document.getElementById('drawPoolItems');
+  container.innerHTML = '';
+  if(currentDrawingId){
+    container.appendChild(makeAddChip(currentDrawingId));
+    const pool = p.photos.filter(ph=>ph.kind==='pool' && ph.poolScope===currentDrawingId);
+    pool.forEach(ph=> container.appendChild(makePhotoChip(ph)));
+    document.getElementById('drawPoolCount').textContent = pool.length;
+  }else{
+    document.getElementById('drawPoolCount').textContent = 0;
+  }
+}
+
+function makeAddChip(scope){
+  const addChip = document.createElement('button');
+  addChip.className = 'poolAddChip';
+  addChip.title = '写真を追加';
+  addChip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>写真を追加</span>';
+  addChip.addEventListener('click', ()=>{
+    pendingUploadScope = scope;
+    document.getElementById('fileInput').click();
+  });
+  return addChip;
+}
+
+function makePhotoChip(ph){
+  const chip = document.createElement('div');
+  chip.className = 'poolChip';
+  const img = document.createElement('img');
+  img.src = ph.thumb;
+  chip.appendChild(img);
+  const del = document.createElement('button');
+  del.className = 'poolChipDel';
+  del.textContent = '×';
+  del.title = '削除';
+  del.addEventListener('pointerdown', e=>{ e.stopPropagation(); });
+  del.addEventListener('click', e=>{ e.stopPropagation(); deletePoolPhoto(ph.id); });
+  chip.appendChild(del);
+  chip.addEventListener('pointerdown', e=>{ e.preventDefault(); startDragMove(e, ph.id, 'photo'); });
+  return chip;
+}
+
+function makeDrawingChip(d){
+  const chip = document.createElement('div');
+  chip.className = 'poolChip drawingChip';
+  chip.title = d.name;
+  const img = document.createElement('img');
+  img.src = d.image;
+  chip.appendChild(img);
+  chip.addEventListener('pointerdown', e=>{ e.preventDefault(); startDragMove(e, d.id, 'drawing'); });
+  return chip;
+}
+
+// ── ドラッグ配置(写真・図面 共通) ─────────────────────────
+function startDragMove(e, itemId, itemType){
+  const p = currentProject();
+  const thumbSrc = itemType==='drawing'
+    ? (p.drawings.find(d=>d.id===itemId)||{}).image
+    : (findPhoto(itemId)||{}).thumb;
+  if(!thumbSrc) return;
   const startX = e.clientX, startY = e.clientY;
   let moved = false, ghost = null;
 
   function currentTargetEl(){
     if(currentView==='map') return document.getElementById('map');
-    if(currentView==='drawing' && currentDrawing()) return document.getElementById('drawingInner');
+    if(currentView==='drawing' && itemType==='photo' && currentDrawing()) return document.getElementById('drawingInner');
     return null;
   }
   function setDragOver(on){
@@ -1108,7 +1219,7 @@ function startPoolDragMove(e, photoId){
       moved = true;
       ghost = document.createElement('img');
       ghost.className = 'dragGhost';
-      ghost.src = ph0.thumb;
+      ghost.src = thumbSrc;
       document.body.appendChild(ghost);
     }
     if(moved){
@@ -1123,8 +1234,13 @@ function startPoolDragMove(e, photoId){
     document.removeEventListener('pointerup', onUp);
     if(ghost) ghost.remove();
     setDragOver(false);
-    if(!moved){ openPanel(photoId); return; }
-    tryDropPhoto(photoId, ev.clientX, ev.clientY);
+    if(!moved){
+      if(itemType==='photo'){ openPanel(itemId); }
+      else{ currentDrawingId = itemId; switchView('drawing'); renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray(); }
+      return;
+    }
+    if(itemType==='photo') tryDropPhoto(itemId, ev.clientX, ev.clientY);
+    else tryDropDrawing(itemId, ev.clientX, ev.clientY);
   }
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp, { once:true });
@@ -1139,7 +1255,8 @@ function tryDropPhoto(photoId, clientX, clientY){
       const pt = L.point(clientX-rect.left, clientY-rect.top);
       const ll = map.containerPointToLatLng(pt);
       ph.kind = 'map'; ph.lat = ll.lat; ph.lng = ll.lng;
-      renderMapView(); renderPoolTray(); renderThumbView();
+      delete ph.poolScope;
+      renderMapView(); renderMapPoolTray(); renderThumbView();
       scheduleSave();
       toast('地図に配置しました');
       return;
@@ -1154,7 +1271,8 @@ function tryDropPhoto(photoId, clientX, clientY){
         const x = (clientX-rect.left)/rect.width*100;
         const y = (clientY-rect.top)/rect.height*100;
         ph.kind = 'drawing'; ph.drawingId = d.id; ph.x = x; ph.y = y;
-        renderDrawingPins(); renderPoolTray(); renderThumbView();
+        delete ph.poolScope;
+        renderDrawingPins(); renderDrawingPoolTray(); renderThumbView();
         scheduleSave();
         toast('図面に配置しました');
         return;
@@ -1162,6 +1280,23 @@ function tryDropPhoto(photoId, clientX, clientY){
     }
   }
   toast('地図/図面の上にドロップしてください');
+}
+
+function tryDropDrawing(drawingId, clientX, clientY){
+  if(currentView!=='map' || !map){ toast('地図の上にドロップしてください'); return; }
+  const rect = document.getElementById('map').getBoundingClientRect();
+  if(clientX>=rect.left && clientX<=rect.right && clientY>=rect.top && clientY<=rect.bottom){
+    const pt = L.point(clientX-rect.left, clientY-rect.top);
+    const ll = map.containerPointToLatLng(pt);
+    const p = currentProject();
+    const d = p.drawings.find(x=>x.id===drawingId);
+    d.lat = ll.lat; d.lng = ll.lng;
+    renderMapView(); renderMapPoolTray();
+    scheduleSave();
+    toast('地図に配置しました');
+  }else{
+    toast('地図の上にドロップしてください');
+  }
 }
 
 // ── DRAWING VIEW ─────────────────────────────────────────
@@ -1174,7 +1309,7 @@ function renderDrawingTabs(){
     const chip = document.createElement('button');
     chip.className = 'drawChip' + (d.id===currentDrawingId ? ' active' : '');
     chip.textContent = d.name;
-    chip.addEventListener('click', ()=>{ currentDrawingId = d.id; renderDrawingTabs(); renderDrawingView(); });
+    chip.addEventListener('click', ()=>{ currentDrawingId = d.id; renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray(); });
     wrap.appendChild(chip);
   });
   const addChip = document.createElement('button');
@@ -1298,7 +1433,7 @@ async function createDrawing(){
     p.drawings.push(d);
     currentDrawingId = d.id;
     document.getElementById('newDrawModal').classList.remove('open');
-    renderDrawingTabs(); renderDrawingView();
+    renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray(); renderMapPoolTray();
     scheduleSave();
   }catch(err){
     console.error(err);
@@ -1393,7 +1528,7 @@ function openPanel(id, fromThumb){
 
   if(fromThumb && ph.kind!=='pool'){
     if(ph.kind==='map'){ switchView('map'); }
-    else { currentDrawingId = ph.drawingId; switchView('drawing'); renderDrawingTabs(); renderDrawingView(); }
+    else { currentDrawingId = ph.drawingId; switchView('drawing'); renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray(); }
   }
   renderMapView(); if(currentView==='drawing') renderDrawingPins();
 
@@ -1467,13 +1602,51 @@ function renderComments(ph){
   ph.comments.forEach(c=>{
     const div = document.createElement('div');
     div.className = 'comment';
-    div.innerHTML = `<span class="author"></span><span class="time mono"></span><div class="text"></div>`;
+    div.innerHTML = `<span class="author"></span><span class="time mono"></span><div class="text"></div>
+      <div class="commentActions">
+        <button class="commentEditBtn">編集</button>
+        <button class="commentDelBtn">削除</button>
+      </div>`;
     div.querySelector('.author').textContent = c.author || '匿名';
     div.querySelector('.time').textContent = formatTime(c.time);
     div.querySelector('.text').textContent = c.text;
+    div.querySelector('.commentEditBtn').addEventListener('click', ()=> startEditComment(ph, c, div));
+    div.querySelector('.commentDelBtn').addEventListener('click', ()=> deleteComment(ph, c.id));
     box.appendChild(div);
   });
   box.scrollTop = box.scrollHeight;
+}
+function startEditComment(ph, c, div){
+  const textEl = div.querySelector('.text');
+  const actionsEl = div.querySelector('.commentActions');
+  const ta = document.createElement('textarea');
+  ta.className = 'commentEditArea';
+  ta.value = c.text;
+  textEl.replaceWith(ta);
+  ta.focus();
+  actionsEl.innerHTML = '';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'commentEditBtn';
+  saveBtn.textContent = '保存';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'commentDelBtn';
+  cancelBtn.textContent = 'キャンセル';
+  saveBtn.addEventListener('click', ()=>{
+    const v = ta.value.trim();
+    if(!v){ toast('コメントを入力してください'); return; }
+    c.text = v;
+    scheduleSave();
+    renderComments(ph);
+  });
+  cancelBtn.addEventListener('click', ()=> renderComments(ph));
+  actionsEl.appendChild(saveBtn);
+  actionsEl.appendChild(cancelBtn);
+}
+function deleteComment(ph, commentId){
+  if(!confirm('このコメントを削除しますか？')) return;
+  ph.comments = ph.comments.filter(c=>c.id!==commentId);
+  scheduleSave();
+  renderComments(ph);
 }
 function sendComment(){
   const ph = findPhoto(activePhotoId);
@@ -1484,7 +1657,7 @@ function sendComment(){
   const name = getActiveName();
   localStorage.setItem('fieldmap_comment_name', name);
   ph.comments = ph.comments || [];
-  ph.comments.push({ author:name, text, time:new Date().toISOString() });
+  ph.comments.push({ id: uid(), author:name, text, time:new Date().toISOString() });
   input.value = '';
   renderComments(ph);
   scheduleSave();
@@ -1493,12 +1666,14 @@ function returnToPool(){
   const ph = findPhoto(activePhotoId);
   if(!ph || ph.kind==='pool') return;
   if(!confirm('この写真をプールに戻しますか？(コメントは残ります)')) return;
+  const scope = ph.kind==='map' ? 'map' : ph.drawingId;
   ph.kind = 'pool';
+  ph.poolScope = scope;
   delete ph.lat; delete ph.lng; delete ph.geoLat; delete ph.geoLng;
   delete ph.drawingId; delete ph.x; delete ph.y;
   closePanel();
   renderMapView(); if(currentView==='drawing') renderDrawingPins();
-  renderThumbView(); renderPoolTray();
+  renderThumbView(); renderMapPoolTray(); renderDrawingPoolTray();
   scheduleSave();
 }
 function deletePoolPhoto(photoId){
@@ -1507,7 +1682,17 @@ function deletePoolPhoto(photoId){
   if(!ph) return;
   if(!confirm('この写真を完全に削除しますか？(コメントも削除されます)')) return;
   p.photos = p.photos.filter(x=>x.id!==photoId);
-  renderPoolTray(); renderThumbView();
+  renderMapPoolTray(); renderDrawingPoolTray(); renderThumbView();
+  scheduleSave();
+}
+function refreshPool(scope){
+  if(!scope) return;
+  const p = currentProject();
+  const pool = p.photos.filter(ph=>ph.kind==='pool' && ph.poolScope===scope);
+  if(!pool.length){ toast('プールは空です'); return; }
+  if(!confirm(`プールの${pool.length}件をすべて削除しますか？(コメントも削除されます・図面自体は削除されません)`)) return;
+  p.photos = p.photos.filter(ph=> !(ph.kind==='pool' && ph.poolScope===scope));
+  renderMapPoolTray(); renderDrawingPoolTray(); renderThumbView();
   scheduleSave();
 }
 
@@ -1573,7 +1758,7 @@ async function rotateActivePhoto(deg){
   try{
     ph.thumb = await rotateDataUrl(ph.thumb, deg);
     document.getElementById('panelImg').src = ph.thumb;
-    renderThumbView(); renderPoolTray();
+    renderThumbView(); renderMapPoolTray(); renderDrawingPoolTray();
     if(currentView==='drawing') renderDrawingPins();
     scheduleSave();
   }catch(err){ console.error(err); toast('回転に失敗しました'); }
