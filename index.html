@@ -139,11 +139,17 @@ button{font-family:inherit;}
   background:var(--panel);border-bottom:1px solid var(--line);
 }
 .drawChip{
-  flex:none;border:1px solid var(--line);background:var(--paper);color:var(--ink);
-  border-radius:16px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;
+  flex:none;display:flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--paper);color:var(--ink);
+  border-radius:16px;padding:6px 8px 6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;
 }
 .drawChip.active{background:var(--blue);border-color:var(--blue);color:#fff;}
-.drawChip.addChip{background:none;border-style:dashed;color:var(--blue);}
+.drawChip.addChip{background:none;border-style:dashed;color:var(--blue);padding:6px 14px;}
+.drawChipLabel{cursor:pointer;}
+.drawChipEdit{
+  flex:none;width:18px;height:18px;border-radius:50%;border:none;background:rgba(0,0,0,.08);
+  color:inherit;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;
+}
+.drawChip.active .drawChipEdit{background:rgba(255,255,255,.28);}
 #drawingBody{position:absolute;top:48px;left:0;right:0;bottom:112px;overflow:hidden;}
 #drawingScroll{position:absolute;inset:0;overflow:auto;}
 #drawingInner{position:relative;margin:20px;}
@@ -195,6 +201,11 @@ button{font-family:inherit;}
 .poolAddChip svg{width:17px;height:17px;}
 .poolAddChip span{font-size:9px;white-space:nowrap;line-height:1;}
 .poolChip.drawingChip{border-color:var(--blue);border-width:2px;}
+.drawMarkerWrap{display:flex;flex-direction:column;align-items:center;gap:2px;}
+.drawMarkerLabel{
+  max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:var(--ink);color:#fff;font-size:9px;padding:2px 6px;border-radius:8px;
+}
 .drawMarker{
   width:44px;height:44px;border-radius:8px;overflow:hidden;background:#000;
   border:2px solid var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.4);
@@ -549,6 +560,18 @@ button{font-family:inherit;}
   </div>
 </div>
 
+<div class="modalBg" id="drawEditModal">
+  <div class="card">
+    <h2>図面を編集</h2>
+    <input type="text" id="drawEditName" placeholder="図面名">
+    <div class="modalBtns">
+      <button class="ghostBtn" id="drawDeleteBtn">削除する</button>
+      <button class="primaryBtn" id="drawRenameBtn">名前を保存</button>
+    </div>
+    <button id="drawEditClose" class="closeBtn">閉じる</button>
+  </div>
+</div>
+
 <div class="modalBg" id="uploadNameModal">
   <div class="card">
     <h2><span id="uploadConfirmCount">0</span>枚の写真をアップロード</h2>
@@ -632,6 +655,7 @@ let currentView = 'map';
 let currentDrawingId = null;
 let activePhotoId = null;
 let editingProjectId = null;
+let editingDrawingId = null;
 let drawingZoom = 1;
 
 // ビュー表示切り替え: CSSの詳細度に左右されないよう、インラインstyleで直接制御する
@@ -656,6 +680,9 @@ function setSync(state, msg){
   document.getElementById('syncMsg').textContent = msg;
 }
 function uid(){ return crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random(); }
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 function getActiveName(){
   const v = document.getElementById('commentNameInput').value.trim();
   return v || localStorage.getItem('fieldmap_comment_name') || '匿名';
@@ -810,6 +837,10 @@ function bindUI(){
   document.getElementById('projEditClose').addEventListener('click', ()=> document.getElementById('projEditModal').classList.remove('open'));
   document.getElementById('projRenameBtn').addEventListener('click', renameProject);
   document.getElementById('projDeleteBtn').addEventListener('click', deleteProject);
+
+  document.getElementById('drawEditClose').addEventListener('click', ()=> document.getElementById('drawEditModal').classList.remove('open'));
+  document.getElementById('drawRenameBtn').addEventListener('click', renameDrawing);
+  document.getElementById('drawDeleteBtn').addEventListener('click', deleteDrawing);
 
   document.getElementById('fileInput').addEventListener('change', onFilesChosen);
   document.getElementById('uploadNameCancel').addEventListener('click', ()=>{
@@ -1099,8 +1130,9 @@ function renderMapView(){
   const placedDrawings = p.drawings.filter(d=> d.lat !== undefined);
   placedDrawings.forEach(d=>{
     const icon = L.divIcon({
-      className:'', html:`<div class="drawMarker"><img src="${d.image}"></div>`,
-      iconSize:[44,44], iconAnchor:[22,22]
+      className:'',
+      html:`<div class="drawMarkerWrap"><div class="drawMarkerLabel">${escapeHtml(d.name)}</div><div class="drawMarker"><img src="${d.image}"></div></div>`,
+      iconSize:[70,64], iconAnchor:[35,42]
     });
     const marker = L.marker([d.lat, d.lng], { icon, draggable:true }).addTo(markersLayer);
     marker.on('click', ()=>{
@@ -1363,10 +1395,19 @@ function renderDrawingTabs(){
   wrap.innerHTML = '';
   if(!currentDrawingId && p.drawings.length) currentDrawingId = p.drawings[0].id;
   p.drawings.forEach(d=>{
-    const chip = document.createElement('button');
+    const chip = document.createElement('div');
     chip.className = 'drawChip' + (d.id===currentDrawingId ? ' active' : '');
-    chip.textContent = d.name;
-    chip.addEventListener('click', ()=>{ currentDrawingId = d.id; renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray(); });
+    const label = document.createElement('span');
+    label.className = 'drawChipLabel';
+    label.textContent = d.name;
+    label.addEventListener('click', ()=>{ currentDrawingId = d.id; renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray(); });
+    const editBtn = document.createElement('button');
+    editBtn.className = 'drawChipEdit';
+    editBtn.textContent = '⋯';
+    editBtn.title = '編集';
+    editBtn.addEventListener('click', e=>{ e.stopPropagation(); openDrawEditModal(d.id); });
+    chip.appendChild(label);
+    chip.appendChild(editBtn);
     wrap.appendChild(chip);
   });
   const addChip = document.createElement('button');
@@ -1497,6 +1538,44 @@ async function createDrawing(){
     toast('図面の読み込みに失敗しました');
   }
   document.getElementById('newDrawCreate').textContent = '追加する';
+}
+
+function openDrawEditModal(id){
+  editingDrawingId = id;
+  const p = currentProject();
+  const d = p.drawings.find(x=>x.id===id);
+  if(!d) return;
+  document.getElementById('drawEditName').value = d.name;
+  document.getElementById('drawEditModal').classList.add('open');
+}
+function renameDrawing(){
+  const p = currentProject();
+  const d = p.drawings.find(x=>x.id===editingDrawingId);
+  if(!d) return;
+  const name = document.getElementById('drawEditName').value.trim();
+  if(!name){ toast('図面名を入力してください'); return; }
+  d.name = name;
+  document.getElementById('drawEditModal').classList.remove('open');
+  renderDrawingTabs(); renderMapView(); renderMapPoolTray(); renderThumbView();
+  scheduleSave();
+}
+function deleteDrawing(){
+  const p = currentProject();
+  const d = p.drawings.find(x=>x.id===editingDrawingId);
+  if(!d) return;
+  if(!confirm(`「${d.name}」を削除しますか？この図面に配置・保存されている写真とコメントもすべて削除されます。`)) return;
+  const delId = editingDrawingId;
+  p.drawings = p.drawings.filter(x=>x.id!==delId);
+  p.photos = p.photos.filter(ph=> !(
+    (ph.kind==='drawing' && ph.drawingId===delId) ||
+    (ph.kind==='pool' && ph.poolScope===delId)
+  ));
+  if(currentDrawingId===delId) currentDrawingId = null;
+  if(activePhotoId && !findPhoto(activePhotoId)) closePanel();
+  document.getElementById('drawEditModal').classList.remove('open');
+  renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray();
+  renderMapView(); renderMapPoolTray(); renderThumbView();
+  scheduleSave();
 }
 
 function pdfToImage(file){
