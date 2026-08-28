@@ -444,8 +444,10 @@ button{font-family:inherit;}
       <li><a href="https://www.dropbox.com/developers/apps" target="_blank">Dropbox App Console</a>を開き、Create app → Scoped access → App folder を選択</li>
       <li>Permissions タブで <code>files.content.write</code> と <code>files.content.read</code> にチェック → Submit</li>
       <li>Settings タブ → OAuth 2 → Generated access token → Generate をクリック</li>
-      <li>生成されたトークン(<code>sl.xxxx…</code>)をコピーし、ソース内の <code>DBX_ACCESS_TOKEN</code> に貼り付け</li>
+      <li>生成されたトークン(<code>sl.xxxx…</code>)をコピーし、下の欄に貼り付けてください</li>
     </ol>
+    <input type="password" id="setupTokenInput" placeholder="sl.u から始まるトークン" class="mono" style="margin-top:10px;">
+    <button class="primaryBtn" id="setupTokenSave" style="width:100%;">保存して起動</button>
   </div>
 </div>
 
@@ -511,6 +513,13 @@ function getToken(){
 
 // ── INIT ─────────────────────────────────────────────────
 function init(){
+  document.getElementById('setupTokenSave').addEventListener('click', ()=>{
+    const v = document.getElementById('setupTokenInput').value.trim();
+    if(!v){ toast('トークンを入力してください'); return; }
+    localStorage.setItem(LS_TOKEN_KEY, v);
+    location.reload();
+  });
+
   const token = getToken();
   if(!token){
     document.getElementById('setup').style.display = 'flex';
