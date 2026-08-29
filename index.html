@@ -11,6 +11,9 @@
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script src="https://unpkg.com/exifr/dist/full.umd.js"></script>
 <script src="https://unpkg.com/dropbox@10.34.0/dist/Dropbox-sdk.min.js"></script>
 <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
@@ -300,6 +303,26 @@ button{font-family:inherit;}
 }
 #fullscreenBtn:hover{background:rgba(255,255,255,.28);}
 #fullscreenBtn svg{width:16px;height:16px;}
+.navArrow{
+  position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;
+  border:none;background:rgba(0,0,0,.35);color:#fff;display:none;align-items:center;justify-content:center;cursor:pointer;
+}
+.navArrow:hover{background:rgba(0,0,0,.55);}
+.navArrow svg{width:18px;height:18px;}
+.navArrowLeft{left:8px;}
+.navArrowRight{right:8px;}
+#panelQueueCount{
+  display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,.5);color:#fff;font-size:11px;padding:3px 10px;border-radius:10px;
+  font-family:'JetBrains Mono',monospace;
+}
+.clusterPin{
+  width:38px;height:38px;border-radius:50%;background:var(--blue);border:3px solid #fff;
+  box-shadow:0 1px 4px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;
+}
+.clusterPin span{color:#fff;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;}
+.clusterPin.big{width:48px;height:48px;}
+.clusterPin.big span{font-size:14px;}
 #fullscreenView{
   display:none;position:fixed;inset:0;background:rgba(15,27,33,.96);z-index:2500;
   align-items:center;justify-content:center;padding:24px;
@@ -504,6 +527,9 @@ button{font-family:inherit;}
   <button id="panelClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
   <div id="panelImgWrap">
     <img id="panelImg" src="" alt="">
+    <button id="panelPrevBtn" class="navArrow navArrowLeft" title="前の写真"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <button id="panelNextBtn" class="navArrow navArrowRight" title="次の写真"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+    <div id="panelQueueCount"></div>
     <button id="fullscreenBtn" title="全画面表示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
     <div id="rotateCtrl">
       <button id="rotateBtn" title="時計回りに回転"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
@@ -649,7 +675,9 @@ if (window.pdfjsLib) {
 let dbx = null;
 let DB = { projects: [] };
 let saveTimer = null;
-let map, markersLayer;
+let map, markersLayer, photoClusterGroup;
+let photoQueue = [];
+let photoQueueIndex = 0;
 let currentProjectId = null;
 let currentView = 'map';
 let currentDrawingId = null;
@@ -682,6 +710,14 @@ function setSync(state, msg){
 function uid(){ return crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random(); }
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function makeClusterIcon(cluster){
+  const n = cluster.getChildCount();
+  const big = n >= 20 ? ' big' : '';
+  return L.divIcon({
+    className:'', html:`<div class="clusterPin${big}"><span>${n}</span></div>`,
+    iconSize: n>=20 ? [48,48] : [38,38]
+  });
 }
 function getActiveName(){
   const v = document.getElementById('commentNameInput').value.trim();
@@ -806,6 +842,17 @@ async function init(){
     maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
   markersLayer = L.layerGroup().addTo(map);
+  photoClusterGroup = L.markerClusterGroup({
+    zoomToBoundsOnClick: false,
+    spiderfyOnMaxZoom: false,
+    showCoverageOnHover: false,
+    maxClusterRadius: 60,
+    iconCreateFunction: makeClusterIcon
+  }).addTo(map);
+  photoClusterGroup.on('clusterclick', e=>{
+    const ids = e.layer.getAllChildMarkers().map(m=>m.photoId);
+    openPanel(ids[0], false, ids);
+  });
 
   bindUI();
   loadFromDropbox();
@@ -887,6 +934,8 @@ function bindUI(){
   document.getElementById('starBtn').addEventListener('click', toggleVote);
   document.getElementById('resetGeoBtn').addEventListener('click', resetToGeotag);
   document.getElementById('rotateBtn').addEventListener('click', ()=>rotateActivePhoto(90));
+  document.getElementById('panelPrevBtn').addEventListener('click', panelPrev);
+  document.getElementById('panelNextBtn').addEventListener('click', panelNext);
   document.getElementById('fullscreenBtn').addEventListener('click', ()=>{
     document.getElementById('fullscreenImg').src = document.getElementById('panelImg').src;
     document.getElementById('fullscreenView').classList.add('open');
@@ -1106,18 +1155,21 @@ function renderMapView(){
   const p = currentProject();
   if(!p || !map) return;
   markersLayer.clearLayers();
+  photoClusterGroup.clearLayers();
   const mapPhotos = p.photos.filter(ph=>ph.kind==='map');
   document.getElementById('count').textContent = mapPhotos.length ? `${mapPhotos.length}件` : '';
   document.getElementById('mapEmpty').style.display = mapPhotos.length ? 'none' : 'block';
 
   const sorted = [...mapPhotos].sort((a,b)=> new Date(a.time)-new Date(b.time));
+  const allIds = sorted.map(ph=>ph.id);
   sorted.forEach((ph, idx)=>{
     const icon = L.divIcon({
       className:'', html:`<div class="pin${ph.id===activePhotoId?' active':''}"><span>${idx+1}</span></div>`,
       iconSize:[24,24], iconAnchor:[12,12]
     });
-    const marker = L.marker([ph.lat, ph.lng], { icon, draggable:true }).addTo(markersLayer);
-    marker.on('click', ()=>openPanel(ph.id));
+    const marker = L.marker([ph.lat, ph.lng], { icon, draggable:true });
+    marker.photoId = ph.id;
+    marker.on('click', ()=>openPanel(ph.id, false, allIds));
     marker.on('dragend', ()=>{
       const ll = marker.getLatLng();
       ph.lat = ll.lat; ph.lng = ll.lng;
@@ -1125,6 +1177,7 @@ function renderMapView(){
       updateResetGeoVisibility(ph);
       scheduleSave();
     });
+    photoClusterGroup.addLayer(marker);
   });
 
   const placedDrawings = p.drawings.filter(d=> d.lat !== undefined);
@@ -1657,10 +1710,15 @@ function findPhoto(id){
   const p = currentProject();
   return p ? p.photos.find(ph=>ph.id===id) : null;
 }
-function openPanel(id, fromThumb){
+function openPanel(id, fromThumb, queue){
   activePhotoId = id;
   const ph = findPhoto(id);
   if(!ph) return;
+
+  if(queue && queue.length > 1){ photoQueue = queue; }
+  else{ photoQueue = [id]; }
+  photoQueueIndex = photoQueue.indexOf(id);
+  updatePanelNav();
 
   if(fromThumb && ph.kind!=='pool'){
     if(ph.kind==='map'){ switchView('map'); }
@@ -1709,9 +1767,27 @@ function resetToGeotag(){
 }
 function closePanel(){
   activePhotoId = null;
+  photoQueue = []; photoQueueIndex = 0;
   document.getElementById('panel').classList.remove('open');
   renderMapView();
   if(currentView==='drawing') renderDrawingPins();
+}
+function updatePanelNav(){
+  const has = photoQueue.length > 1;
+  document.getElementById('panelPrevBtn').style.display = has ? 'flex' : 'none';
+  document.getElementById('panelNextBtn').style.display = has ? 'flex' : 'none';
+  document.getElementById('panelQueueCount').style.display = has ? 'block' : 'none';
+  if(has) document.getElementById('panelQueueCount').textContent = `${photoQueueIndex+1} / ${photoQueue.length}`;
+}
+function panelPrev(){
+  if(photoQueue.length < 2) return;
+  photoQueueIndex = (photoQueueIndex - 1 + photoQueue.length) % photoQueue.length;
+  openPanel(photoQueue[photoQueueIndex], false, photoQueue);
+}
+function panelNext(){
+  if(photoQueue.length < 2) return;
+  photoQueueIndex = (photoQueueIndex + 1) % photoQueue.length;
+  openPanel(photoQueue[photoQueueIndex], false, photoQueue);
 }
 function updateStarBtn(ph){
   const votes = ph.votes || [];
