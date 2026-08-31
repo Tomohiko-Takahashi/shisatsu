@@ -636,7 +636,8 @@ button{font-family:inherit;}
   <div class="card">
     <h2>図面を編集</h2>
     <input type="text" id="drawEditName" placeholder="図面名">
-    <button class="primaryBtn" id="drawRecalibBtn" style="width:100%;margin-bottom:12px;display:none;">地図上で位置合わせをやり直す</button>
+    <button class="primaryBtn" id="drawRecalibBtn" style="width:100%;margin-bottom:10px;display:none;">地図上で位置合わせをやり直す</button>
+    <button class="ghostBtn" id="drawUnplaceBtn" style="width:100%;margin-bottom:12px;display:none;">地図から外してプールに戻す</button>
     <div class="modalBtns">
       <button class="ghostBtn" id="drawDeleteBtn">削除する</button>
       <button class="primaryBtn" id="drawRenameBtn">名前を保存</button>
@@ -989,6 +990,7 @@ function bindUI(){
   });
   document.getElementById('drawRenameBtn').addEventListener('click', renameDrawing);
   document.getElementById('drawDeleteBtn').addEventListener('click', deleteDrawing);
+  document.getElementById('drawUnplaceBtn').addEventListener('click', unplaceDrawing);
 
   document.getElementById('fileInput').addEventListener('change', onFilesChosen);
   document.getElementById('uploadNameCancel').addEventListener('click', ()=>{
@@ -1324,13 +1326,29 @@ function clearDrawingOverlays(){
   Object.values(drawingOverlayEls).forEach(o=> o.wrap.remove());
   drawingOverlayEls = {};
 }
+const repairingDrawings = new Set();
+async function repairDrawingGeo(d){
+  if(repairingDrawings.has(d.id)) return;
+  repairingDrawings.add(d.id);
+  try{
+    await ensureDrawingDims(d);
+    if(!d.geo.metersPerPixel){ d.geo.metersPerPixel = 20 / d.imgW; }
+    scheduleSave();
+    if(currentView==='map') renderMapView();
+  }catch(err){ console.error(err); }
+  repairingDrawings.delete(d.id);
+}
 function renderDrawingOverlays(){
   clearDrawingOverlays();
   const p = currentProject();
   if(!p || !map) return;
   const pane = map.getPanes().overlayPane;
-  p.drawings.filter(d=> d.geo && d.geo.metersPerPixel).forEach(d=>{
+  p.drawings.filter(d=> d.geo).forEach(d=>{
     if(calibratingDrawing && calibratingDrawing.id===d.id) return;
+    if(!d.imgW || !d.imgH || !d.geo.metersPerPixel){
+      repairDrawingGeo(d);
+      return;
+    }
     const wrap = document.createElement('div');
     wrap.className = 'geoOverlayWrap';
     wrap.innerHTML = `<img src="${d.image}"><div class="geoOverlayLabel"></div>`;
@@ -1917,6 +1935,7 @@ function openDrawEditModal(id){
   if(!d) return;
   document.getElementById('drawEditName').value = d.name;
   document.getElementById('drawRecalibBtn').style.display = d.geo ? 'block' : 'none';
+  document.getElementById('drawUnplaceBtn').style.display = d.geo ? 'block' : 'none';
   document.getElementById('drawEditModal').classList.add('open');
 }
 function renameDrawing(){
@@ -1929,6 +1948,17 @@ function renameDrawing(){
   document.getElementById('drawEditModal').classList.remove('open');
   renderDrawingTabs(); renderMapView(); renderMapPoolTray(); renderThumbView();
   scheduleSave();
+}
+async function unplaceDrawing(){
+  const p = currentProject();
+  const d = p.drawings.find(x=>x.id===editingDrawingId);
+  if(!d) return;
+  if(!(await showConfirm(`「${d.name}」を地図から外してプールに戻しますか？(位置合わせの情報は失われます。図面内のピン・写真・コメントはそのまま残ります)`, {okLabel:'プールに戻す'}))) return;
+  d.geo = null;
+  document.getElementById('drawEditModal').classList.remove('open');
+  renderMapView(); renderMapPoolTray(); renderThumbView();
+  scheduleSave();
+  toast('図面プールに戻しました');
 }
 async function deleteDrawing(){
   const p = currentProject();
