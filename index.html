@@ -122,6 +122,17 @@ button{font-family:inherit;}
 }
 .pin span{color:#fff;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;}
 .pin.active{box-shadow:0 0 0 3px rgba(29,43,50,.28),0 1px 3px rgba(0,0,0,.4);}
+.groupPin{
+  position:relative;width:38px;height:38px;border-radius:50%;overflow:hidden;
+  border:3px solid var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.4);background:#000;
+}
+.groupPin img{width:100%;height:100%;object-fit:cover;display:block;}
+.groupPin.active{border-color:var(--warn);}
+.groupPinCount{
+  position:absolute;right:-4px;bottom:-4px;background:var(--ink);color:#fff;
+  font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;font-family:'JetBrains Mono',monospace;
+  border:1.5px solid #fff;
+}
 .emptyState{
   position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   text-align:center;color:var(--muted);pointer-events:none;z-index:400;width:80%;
@@ -300,6 +311,13 @@ button{font-family:inherit;}
   border-radius:8px;padding:8px 0;font-size:12px;cursor:pointer;display:none;
 }
 #resetGeoBtn:hover{border-color:var(--blue);background:var(--blue-tint);}
+#groupActions{display:none;gap:8px;margin-top:8px;}
+#groupActions.show{display:flex;}
+#groupActions button{
+  flex:1;background:none;border:1px dashed var(--line);color:var(--blue-deep);
+  border-radius:8px;padding:8px 0;font-size:11px;cursor:pointer;
+}
+#groupActions button:hover{border-color:var(--blue);background:var(--blue-tint);}
 
 /* ── SIDE PANEL (shared) ─────────────────── */
 #panel{
@@ -590,6 +608,10 @@ button{font-family:inherit;}
       <button id="delBtn">プールに戻す</button>
     </div>
     <button id="resetGeoBtn">📍 元の位置に戻す</button>
+    <div id="groupActions">
+      <button id="setCoverBtn">★ 代表にする</button>
+      <button id="leaveGroupBtn">グループから外す</button>
+    </div>
   </div>
   <div id="comments"></div>
   <div id="panelVoteRow">
@@ -1039,6 +1061,15 @@ function bindUI(){
   document.getElementById('delBtn').addEventListener('click', returnToPool);
   document.getElementById('starBtn').addEventListener('click', toggleVote);
   document.getElementById('resetGeoBtn').addEventListener('click', resetToGeotag);
+  document.getElementById('setCoverBtn').addEventListener('click', setCoverPhoto);
+  document.getElementById('leaveGroupBtn').addEventListener('click', ()=>{
+    const ph = findPhoto(activePhotoId);
+    if(!ph) return;
+    leaveGroup(ph, false);
+    renderMapView(); renderThumbView(); scheduleSave();
+    openPanel(ph.id, false, [ph.id]);
+    toast('グループから外しました');
+  });
   document.getElementById('moveToDrawBtn').addEventListener('click', openMoveToDrawModal);
   document.getElementById('moveToDrawClose').addEventListener('click', ()=> document.getElementById('moveToDrawModal').classList.remove('open'));
   document.getElementById('rotateBtn').addEventListener('click', ()=>rotateActivePhoto(90));
@@ -1113,6 +1144,7 @@ function migrateIfNeeded(){
   }
   DB.projects.forEach(p=>{
     p.drawings = p.drawings || [];
+    p.groups = p.groups || [];
     p.photos = p.photos || [];
     p.drawings.forEach(d=>{
       if(d.lat !== undefined && !d.geo){
@@ -1270,12 +1302,13 @@ function renderMapView(){
   if(!p || !map) return;
   markersLayer.clearLayers();
   photoClusterGroup.clearLayers();
+  p.groups = p.groups || [];
   const mapPhotos = p.photos.filter(ph=>ph.kind==='map');
   document.getElementById('count').textContent = mapPhotos.length ? `${mapPhotos.length}件` : '';
   document.getElementById('mapEmpty').style.display = mapPhotos.length ? 'none' : 'block';
 
-  const sorted = [...mapPhotos].sort((a,b)=> new Date(a.time)-new Date(b.time));
-  const allIds = sorted.map(ph=>ph.id);
+  const ungrouped = mapPhotos.filter(ph=> !ph.groupId);
+  const sorted = [...ungrouped].sort((a,b)=> new Date(a.time)-new Date(b.time));
   sorted.forEach((ph, idx)=>{
     const icon = L.divIcon({
       className:'', html:`<div class="pin${ph.id===activePhotoId?' active':''}"><span>${idx+1}</span></div>`,
@@ -1283,25 +1316,128 @@ function renderMapView(){
     });
     const marker = L.marker([ph.lat, ph.lng], { icon, draggable:true });
     marker.photoId = ph.id;
-    marker.on('click', ()=>openPanel(ph.id, false, allIds));
-    marker.on('dragend', ()=>{
-      const ll = marker.getLatLng();
-      ph.lat = ll.lat; ph.lng = ll.lng;
-      if(ph.id===activePhotoId) document.getElementById('panelCoord').textContent = `${ph.lat.toFixed(6)}, ${ph.lng.toFixed(6)}`;
-      updateResetGeoVisibility(ph);
-      scheduleSave();
+    marker.on('click', ()=>openPanel(ph.id, false, [ph.id]));
+    marker.on('dragend', ()=> onMarkerDragEnd(marker, { type:'photo', id:ph.id }));
+    photoClusterGroup.addLayer(marker);
+  });
+
+  p.groups.forEach(g=>{
+    const members = p.photos.filter(ph=> ph.groupId===g.id);
+    if(members.length < 2) return;
+    const cover = members.find(ph=>ph.id===g.coverPhotoId) || members[0];
+    const isActive = members.some(m=>m.id===activePhotoId);
+    const icon = L.divIcon({
+      className:'',
+      html:`<div class="groupPin${isActive?' active':''}"><img src="${cover.thumb}"><span class="groupPinCount">${members.length}</span></div>`,
+      iconSize:[38,38], iconAnchor:[19,19]
     });
+    const marker = L.marker([g.lat, g.lng], { icon, draggable:true });
+    marker.groupId = g.id;
+    marker.on('click', ()=> openPanel(cover.id, false, members.map(m=>m.id)));
+    marker.on('dragend', ()=> onMarkerDragEnd(marker, { type:'group', id:g.id }));
     photoClusterGroup.addLayer(marker);
   });
 
   renderDrawingOverlays();
+}
+function findMergeTarget(marker, self){
+  const myPt = map.latLngToContainerPoint(marker.getLatLng());
+  let found = null;
+  photoClusterGroup.eachLayer(other=>{
+    if(found || other === marker) return;
+    if(self.type==='photo' && other.photoId===self.id) return;
+    if(self.type==='group' && other.groupId===self.id) return;
+    const dist = myPt.distanceTo(map.latLngToContainerPoint(other.getLatLng()));
+    if(dist < 26){
+      if(other.photoId) found = { type:'photo', id: other.photoId, latlng: other.getLatLng() };
+      else if(other.groupId) found = { type:'group', id: other.groupId, latlng: other.getLatLng() };
+    }
+  });
+  return found;
+}
+function onMarkerDragEnd(marker, self){
+  const ll = marker.getLatLng();
+  const target = findMergeTarget(marker, self);
+  if(target){
+    mergeIntoTarget(self, target);
+    return;
+  }
+  const p = currentProject();
+  if(self.type==='photo'){
+    const ph = findPhoto(self.id);
+    ph.lat = ll.lat; ph.lng = ll.lng;
+    if(ph.id===activePhotoId) document.getElementById('panelCoord').textContent = `${ph.lat.toFixed(6)}, ${ph.lng.toFixed(6)}`;
+    updateResetGeoVisibility(ph);
+  }else{
+    const g = p.groups.find(x=>x.id===self.id);
+    g.lat = ll.lat; g.lng = ll.lng;
+  }
+  scheduleSave();
+}
+function mergeIntoTarget(self, target){
+  const p = currentProject();
+  p.groups = p.groups || [];
+  if(self.type==='photo' && target.type==='photo'){
+    const g = { id: uid(), lat: target.latlng.lat, lng: target.latlng.lng, coverPhotoId: target.id };
+    p.groups.push(g);
+    findPhoto(self.id).groupId = g.id;
+    findPhoto(target.id).groupId = g.id;
+  }else if(self.type==='photo' && target.type==='group'){
+    findPhoto(self.id).groupId = target.id;
+  }else if(self.type==='group' && target.type==='photo'){
+    const g = p.groups.find(x=>x.id===self.id);
+    findPhoto(target.id).groupId = g.id;
+    g.lat = target.latlng.lat; g.lng = target.latlng.lng;
+  }else if(self.type==='group' && target.type==='group'){
+    const draggedGroup = p.groups.find(x=>x.id===self.id);
+    const targetGroup = p.groups.find(x=>x.id===target.id);
+    p.photos.filter(ph=>ph.groupId===draggedGroup.id).forEach(ph=> ph.groupId = targetGroup.id);
+    p.groups = p.groups.filter(x=>x.id!==draggedGroup.id);
+  }
+  renderMapView(); renderThumbView();
+  scheduleSave();
+  toast('グループにまとめました');
+}
+function leaveGroup(ph, doRender){
+  const p = currentProject();
+  const g = p.groups.find(x=>x.id===ph.groupId);
+  ph.groupId = undefined;
+  if(g){
+    const remaining = p.photos.filter(x=>x.groupId===g.id);
+    if(remaining.length < 2){
+      remaining.forEach(m=> m.groupId = undefined);
+      p.groups = p.groups.filter(x=>x.id!==g.id);
+    }else if(g.coverPhotoId===ph.id){
+      g.coverPhotoId = remaining[0].id;
+    }
+  }
+  if(doRender !== false){ renderMapView(); renderThumbView(); scheduleSave(); }
+}
+function setCoverPhoto(){
+  const ph = findPhoto(activePhotoId);
+  if(!ph || !ph.groupId) return;
+  const p = currentProject();
+  const g = p.groups.find(x=>x.id===ph.groupId);
+  if(!g) return;
+  g.coverPhotoId = ph.id;
+  document.getElementById('setCoverBtn').style.display = 'none';
+  renderMapView();
+  scheduleSave();
+  toast('代表写真にしました');
 }
 function fitAll(silent){
   const p = currentProject();
   const mapPhotos = p.photos.filter(ph=>ph.kind==='map');
   const placedDrawings = p.drawings.filter(d=> d.geo);
   if(!mapPhotos.length && !placedDrawings.length){ if(!silent) toast('地図上に何もありません'); return; }
-  const points = [...mapPhotos.map(ph=>[ph.lat,ph.lng]), ...placedDrawings.map(d=>[d.geo.lat,d.geo.lng])];
+  const photoPoints = mapPhotos.map(ph=>{
+    if(ph.groupId){
+      const g = (p.groups||[]).find(x=>x.id===ph.groupId);
+      if(g) return [g.lat, g.lng];
+    }
+    return [ph.lat, ph.lng];
+  });
+  const points = [...photoPoints, ...placedDrawings.map(d=>[d.geo.lat,d.geo.lng])];
   map.fitBounds(L.latLngBounds(points), { padding:[40,40], maxZoom:17 });
 }
 
@@ -2074,10 +2210,14 @@ function openPanel(id, fromThumb, queue){
   }
   renderMapView(); if(currentView==='drawing') renderDrawingPins();
 
+  const p = currentProject();
+  const grp = ph.kind==='map' && ph.groupId ? p.groups.find(x=>x.id===ph.groupId) : null;
+
   document.getElementById('panelImg').src = ph.thumb;
   if(ph.kind==='map'){
-    document.getElementById('panelLabelTitle').textContent = '地点';
-    document.getElementById('panelCoord').textContent = `${ph.lat.toFixed(6)}, ${ph.lng.toFixed(6)}`;
+    document.getElementById('panelLabelTitle').textContent = grp ? '地点(グループ)' : '地点';
+    const cLat = grp ? grp.lat : ph.lat, cLng = grp ? grp.lng : ph.lng;
+    document.getElementById('panelCoord').textContent = `${cLat.toFixed(6)}, ${cLng.toFixed(6)}`;
   }else if(ph.kind==='drawing'){
     const d = currentProject().drawings.find(x=>x.id===ph.drawingId);
     document.getElementById('panelLabelTitle').textContent = '図面';
@@ -2090,27 +2230,28 @@ function openPanel(id, fromThumb, queue){
   document.getElementById('panelTime').textContent = formatTime(ph.time);
   document.getElementById('commentNameInput').value = localStorage.getItem('fieldmap_comment_name') || '';
   document.getElementById('delBtn').style.display = ph.kind==='pool' ? 'none' : 'inline-block';
-  const p = currentProject();
   document.getElementById('moveToDrawBtn').style.display = (ph.kind==='map' && p.drawings.length) ? 'inline-block' : 'none';
+  document.getElementById('groupActions').classList.toggle('show', !!grp);
+  if(grp) document.getElementById('setCoverBtn').style.display = grp.coverPhotoId===ph.id ? 'none' : 'block';
   updateStarBtn(ph);
   updateResetGeoVisibility(ph);
   renderComments(ph);
   document.getElementById('panel').classList.add('open');
-  if(ph.kind==='map' && map) map.panTo([ph.lat, ph.lng]);
+  if(ph.kind==='map' && map) map.panTo(grp ? [grp.lat, grp.lng] : [ph.lat, ph.lng]);
 }
 function updateResetGeoVisibility(ph){
   const btn = document.getElementById('resetGeoBtn');
   if(ph.kind !== 'map'){ btn.style.display = 'none'; return; }
+  if(ph.groupId){ btn.style.display = ph.geoLat!==undefined ? 'block' : 'none'; return; }
   const moved = ph.geoLat!==undefined && (ph.lat!==ph.geoLat || ph.lng!==ph.geoLng);
   btn.style.display = moved ? 'block' : 'none';
 }
 function resetToGeotag(){
   const ph = findPhoto(activePhotoId);
   if(!ph || ph.kind!=='map' || ph.geoLat===undefined) return;
+  if(ph.groupId) leaveGroup(ph, false);
   ph.lat = ph.geoLat; ph.lng = ph.geoLng;
-  document.getElementById('panelCoord').textContent = `${ph.lat.toFixed(6)}, ${ph.lng.toFixed(6)}`;
-  updateResetGeoVisibility(ph);
-  renderMapView();
+  openPanel(ph.id, false, [ph.id]);
   if(map) map.panTo([ph.lat, ph.lng]);
   scheduleSave();
   toast('元の位置に戻しました');
@@ -2228,6 +2369,7 @@ async function returnToPool(){
   const ph = findPhoto(activePhotoId);
   if(!ph || ph.kind==='pool') return;
   if(!(await showConfirm('この写真をプールに戻しますか？(コメントは残ります)', {okLabel:'プールに戻す'}))) return;
+  if(ph.groupId) leaveGroup(ph, false);
   const scope = ph.kind==='map' ? 'map' : ph.drawingId;
   ph.kind = 'pool';
   ph.poolScope = scope;
@@ -2259,6 +2401,7 @@ function openMoveToDrawModal(){
 function moveActivePhotoToDrawing(drawingId){
   const ph = findPhoto(activePhotoId);
   if(!ph || ph.kind!=='map') return;
+  if(ph.groupId) leaveGroup(ph, false);
   ph.kind = 'pool';
   ph.poolScope = drawingId;
   delete ph.lat; delete ph.lng; delete ph.geoLat; delete ph.geoLng;
