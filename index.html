@@ -219,23 +219,14 @@ button{font-family:inherit;}
   position:absolute;transform-origin:center center;cursor:pointer;pointer-events:auto;
 }
 .geoOverlayWrap img{
-  width:100%;height:100%;display:block;object-fit:contain;
-  box-shadow:0 2px 10px rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.8);border-radius:2px;
+  width:100%;height:100%;display:block;object-fit:contain;opacity:.6;
+  box-shadow:0 2px 8px rgba(0,0,0,.3);border:1.5px solid rgba(46,92,135,.7);border-radius:2px;
 }
+.geoOverlayWrap:hover img{opacity:.85;}
 .geoOverlayLabel{
   position:absolute;top:-20px;left:50%;transform:translateX(-50%);white-space:nowrap;
   background:var(--ink);color:#fff;font-size:10px;padding:2px 8px;border-radius:8px;pointer-events:none;
 }
-.drawMarkerWrap{display:flex;flex-direction:column;align-items:center;gap:2px;}
-.drawMarkerLabel{
-  max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  background:var(--ink);color:#fff;font-size:9px;padding:2px 6px;border-radius:8px;
-}
-.drawMarker{
-  width:44px;height:44px;border-radius:8px;overflow:hidden;background:#000;
-  border:2px solid var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.4);
-}
-.drawMarker img{width:100%;height:100%;object-fit:cover;display:block;}
 .calibOverlayWrap{
   position:absolute;transform-origin:center center;cursor:grab;touch-action:none;z-index:1;
 }
@@ -1558,23 +1549,51 @@ function renderMapView(){
 
   renderDrawingMarkers();
 }
+const DRAW_THUMB_BASE_SIZE = 60; // 基準ズームでの目安サイズ(px、長辺基準)
+const DRAW_THUMB_BASE_ZOOM = 17;
+const DRAW_THUMB_MIN = 22;
+const DRAW_THUMB_MAX = 140;
+function drawingThumbSize(d, zoom){
+  let displaySize = DRAW_THUMB_BASE_SIZE * Math.pow(2, zoom - DRAW_THUMB_BASE_ZOOM);
+  displaySize = Math.max(DRAW_THUMB_MIN, Math.min(DRAW_THUMB_MAX, displaySize));
+  const aspect = d.imgH / d.imgW;
+  return aspect >= 1
+    ? { w: displaySize / aspect, h: displaySize }
+    : { w: displaySize, h: displaySize * aspect };
+}
+function positionThumbOverlayEl(el, d){
+  const { w, h } = drawingThumbSize(d, map.getZoom());
+  const pt = map.latLngToLayerPoint([d.geo.lat, d.geo.lng]);
+  el.style.left = pt.x + 'px';
+  el.style.top = pt.y + 'px';
+  el.style.width = w + 'px';
+  el.style.height = h + 'px';
+  el.style.transform = `translate(-50%, -50%) rotate(${d.geo.rotationDeg}deg)`;
+}
+let drawingThumbEls = {};
+function clearDrawingThumbs(){
+  Object.values(drawingThumbEls).forEach(o=> o.wrap.remove());
+  drawingThumbEls = {};
+}
 function renderDrawingMarkers(){
-  markersLayer.clearLayers();
+  clearDrawingThumbs();
   const p = currentProject();
-  if(!p) return;
+  if(!p || !map) return;
+  const pane = map.getPanes().overlayPane;
   p.drawings.filter(d=> d.geo).forEach(d=>{
     if(calibratingDrawing && calibratingDrawing.id===d.id) return;
-    const icon = L.divIcon({
-      className:'',
-      html:`<div class="drawMarkerWrap"><div class="drawMarkerLabel">${escapeHtml(d.name)}</div><div class="drawMarker"><img src="${d.image}"></div></div>`,
-      iconSize:[70,64], iconAnchor:[35,41]
-    });
-    const marker = L.marker([d.geo.lat, d.geo.lng], { icon }).addTo(markersLayer);
-    marker.on('click', ()=>{
+    const wrap = document.createElement('div');
+    wrap.className = 'geoOverlayWrap';
+    wrap.innerHTML = `<img src="${d.image}"><div class="geoOverlayLabel"></div>`;
+    wrap.querySelector('.geoOverlayLabel').textContent = d.name;
+    wrap.querySelector('img').addEventListener('click', ()=>{
       currentDrawingId = d.id;
       switchView('drawing');
       renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray();
     });
+    pane.appendChild(wrap);
+    positionThumbOverlayEl(wrap, d);
+    drawingThumbEls[d.id] = { wrap, d };
   });
 }
 function findMergeTarget(marker, self){
@@ -1713,6 +1732,7 @@ function zoomToFitDrawing(d){
   map.fitBounds(bounds, { padding:[50,50], maxZoom:21, animate:false });
 }
 function repositionAllOverlays(){
+  Object.values(drawingThumbEls).forEach(o=> positionThumbOverlayEl(o.wrap, o.d));
   if(calibOverlayEl && calibratingDrawing) positionOverlayEl(calibOverlayEl, calibratingDrawing.geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
   if(calibHandleEl) positionCalibHandle();
   if(calibResizeEl) positionCalibResizeHandle();
