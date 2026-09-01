@@ -238,6 +238,11 @@ button{font-family:inherit;}
   border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.5);cursor:grab;touch-action:none;z-index:2;
   transform:translate(-50%,-50%);
 }
+.calibResizeHandle{
+  position:absolute;width:22px;height:22px;border-radius:5px;background:var(--warn);
+  border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.5);cursor:nwse-resize;touch-action:none;z-index:2;
+  transform:translate(-50%,-50%);
+}
 #calibBar{
   display:none;position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:1500;
   background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
@@ -463,6 +468,19 @@ button{font-family:inherit;}
 #setup ol{font-size:13px;line-height:1.9;padding-left:20px;margin:0 0 6px;}
 
 /* ── TOAST ────────────────────────────────── */
+#loadModal{
+  display:none;position:fixed;inset:0;background:rgba(245,246,243,.94);z-index:2600;
+  align-items:center;justify-content:center;
+}
+#loadModal.open{display:flex;}
+#loadModal .card{text-align:center;padding:32px;}
+.loadSpinner{
+  width:36px;height:36px;border:3px solid var(--line);border-top-color:var(--blue);
+  border-radius:50%;margin:0 auto 16px;animation:spin .8s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+.loadTitle{font-size:14px;font-weight:700;margin-bottom:4px;}
+.loadSub{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
 #toast{
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(60px);
   background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;
@@ -747,6 +765,14 @@ button{font-family:inherit;}
   </div>
 </div>
 
+<div id="loadModal">
+  <div class="card">
+    <div class="loadSpinner"></div>
+    <div class="loadTitle" id="loadTitle">読み込み中…</div>
+    <div class="loadSub" id="loadSub"></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -755,7 +781,12 @@ button{font-family:inherit;}
 // ここに直接書き込むのは「チーム全員に配布するindex.html」を作る時だけでOK
 const DBX_APP_KEY = "7o4x6n443qgci2q";
 const DBX_REFRESH_TOKEN = "A5vtbLidnBoAAAAAAAAAAUDhMh7RXocTAuPTeLLQjlNGfLjLBhPQ-Q_6se3otwf0";
-const DBX_DATA_PATH = "/data.json";
+const DBX_DATA_PATH = "/data.json"; // 旧形式(移行元)
+const DBX_INDEX_PATH = "/index.json";
+function projectPath(id){ return `/projects/${id}.json`; }
+function isProjectLoaded(p){ return Array.isArray(p.photos); }
+function projPhotoCount(p){ return isProjectLoaded(p) ? p.photos.length : (p.photoCount||0); }
+function projDrawingCount(p){ return isProjectLoaded(p) ? p.drawings.length : (p.drawingCount||0); }
 // ══════════════════════════════════════════════════════════
 
 if (window.pdfjsLib) {
@@ -772,9 +803,11 @@ let calibratingDrawing = null;
 let calibBackupGeo = null;
 let calibOverlayEl = null;
 let calibHandleEl = null;
+let calibResizeEl = null;
 let calibDistMode = false;
 let calibDistPts = [];
 let calibMapClickHandler = null;
+let markerDragActive = false;
 let currentProjectId = null;
 let currentView = 'map';
 let currentDrawingId = null;
@@ -989,7 +1022,7 @@ function resizeLayout(){
 
 function bindUI(){
   document.getElementById('backBtn').addEventListener('click', goToProjectList);
-  document.getElementById('reloadBtn').addEventListener('click', ()=>loadFromDropbox(true));
+  document.getElementById('reloadBtn').addEventListener('click', manualReload);
   document.querySelectorAll('.tabbtn').forEach(b=>{
     b.addEventListener('click', ()=> switchView(b.dataset.view));
   });
@@ -1103,10 +1136,10 @@ function bindUI(){
 }
 
 // ── DROPBOX SYNC ─────────────────────────────────────────
-// ── ローカルキャッシュ(IndexedDB) ─────────────────────────
-// 起動のたびにDropboxからの全件ダウンロードを待たせないよう、
-// 前回のデータをブラウザ内に保存しておき、まずそれを即表示する。
-// 裏側でDropboxの最新版を取得し、届き次第静かに差し替える。
+// プロジェクト一覧は軽量な index.json だけを読み込んで即表示し、
+// 各プロジェクトの写真本体は開いた時に /projects/<id>.json を個別に取得する。
+
+// ── ローカルキャッシュ(IndexedDB、キーごとに保存) ─────────
 const CACHE_DB_NAME = 'fieldmap_cache';
 const CACHE_STORE = 'kv';
 function openCacheDB(){
@@ -1117,61 +1150,134 @@ function openCacheDB(){
     req.onerror = ()=> reject(req.error);
   });
 }
-async function cacheGetDB(){
+async function cacheGet(key){
   try{
     const db = await openCacheDB();
     return await new Promise(resolve=>{
       const tx = db.transaction(CACHE_STORE, 'readonly');
-      const req = tx.objectStore(CACHE_STORE).get('db');
+      const req = tx.objectStore(CACHE_STORE).get(key);
       req.onsuccess = ()=> resolve(req.result || null);
       req.onerror = ()=> resolve(null);
     });
   }catch(e){ return null; }
 }
-async function cacheSetDB(jsonStr){
+async function cacheSet(key, jsonStr){
   try{
     const db = await openCacheDB();
     const tx = db.transaction(CACHE_STORE, 'readwrite');
-    tx.objectStore(CACHE_STORE).put(jsonStr, 'db');
+    tx.objectStore(CACHE_STORE).put(jsonStr, key);
   }catch(e){ /* キャッシュ保存に失敗しても同期自体には影響しない */ }
 }
+function buildIndexArray(){
+  return DB.projects.map(p=> ({
+    id: p.id, name: p.name, createdAt: p.createdAt,
+    photoCount: projPhotoCount(p), drawingCount: projDrawingCount(p)
+  }));
+}
 
-let networkDataLoaded = false;
+// ── 読み込み中モーダル ───────────────────────────────────
+function openLoadingModal(name, count){
+  document.getElementById('loadTitle').textContent = `${name || 'プロジェクト'}を読み込み中…`;
+  document.getElementById('loadSub').textContent = (count!=null && count>0) ? `写真 ${count}件` : '';
+  document.getElementById('loadModal').classList.add('open');
+}
+function closeLoadingModal(){
+  document.getElementById('loadModal').classList.remove('open');
+}
+
+// ── プロジェクト単位のフィールド移行 ─────────────────────
+function migrateProjectFields(p){
+  p.drawings = p.drawings || [];
+  p.groups = p.groups || [];
+  p.photos = p.photos || [];
+  p.drawings.forEach(d=>{
+    if(d.lat !== undefined && !d.geo){
+      d.geo = { lat:d.lat, lng:d.lng, rotationDeg:0, metersPerPixel:null };
+      delete d.lat; delete d.lng;
+    }
+  });
+  p.photos.forEach(ph=>{
+    ph.votes = ph.votes || [];
+    ph.comments = ph.comments || [];
+    if(ph.kind==='map' && ph.geoLat===undefined){ ph.geoLat = ph.lat; ph.geoLng = ph.lng; }
+    if(ph.kind==='pool' && !ph.poolScope){ ph.poolScope = 'map'; }
+    ph.comments.forEach(c=>{ if(!c.id) c.id = uid(); });
+  });
+}
+
+// ── 旧形式(/data.json 1ファイル)からの一度きりの移行 ─────
+async function legacyMigrateOldDataJson(){
+  try{
+    const res = await dbx.filesDownload({ path: DBX_DATA_PATH });
+    const text = await res.result.fileBlob.text();
+    let old;
+    try{ old = JSON.parse(text); }catch(e){ return null; }
+    let projects = [];
+    if(Array.isArray(old.projects)){ projects = old.projects; }
+    else if(Array.isArray(old.photos) && old.photos.length){
+      projects = [{
+        id: uid(), name:'既存データ', createdAt:new Date().toISOString(), drawings:[],
+        photos: old.photos.map(ph=>({ ...ph, kind:'map', votes: ph.votes||[] }))
+      }];
+    }
+    if(!projects.length) return null;
+    projects.forEach(p=> migrateProjectFields(p));
+    await dbx.filesUpload({ path: DBX_INDEX_PATH, mode:{'.tag':'overwrite'}, contents: JSON.stringify({ projects: projects.map(p=>({
+      id:p.id, name:p.name, createdAt:p.createdAt, photoCount:p.photos.length, drawingCount:p.drawings.length
+    })) }) });
+    for(const p of projects){
+      await dbx.filesUpload({ path: projectPath(p.id), mode:{'.tag':'overwrite'}, contents: JSON.stringify(p) });
+    }
+    return projects;
+  }catch(err){
+    return null;
+  }
+}
+
+// ── インデックス(プロジェクト一覧)の読み込み ─────────────
+let networkIndexLoaded = false;
 function loadFromDropbox(manual){
-  networkDataLoaded = false;
+  networkIndexLoaded = false;
   if(!manual){
-    cacheGetDB().then(cached=>{
-      if(cached && !networkDataLoaded){
+    cacheGet('index').then(cached=>{
+      if(cached && !networkIndexLoaded){
         try{
-          DB = JSON.parse(cached);
-          migrateIfNeeded();
+          DB.projects = (JSON.parse(cached).projects) || [];
           renderCurrentScreen();
         }catch(e){ console.error(e); }
       }
     });
   }
   setSync('busy', manual ? '再読み込み中…' : '読み込み中…');
-  dbx.filesDownload({ path: DBX_DATA_PATH })
+  dbx.filesDownload({ path: DBX_INDEX_PATH })
     .then(res=>{
       const blob = res.result.fileBlob;
       const reader = new FileReader();
       reader.onload = ()=>{
-        networkDataLoaded = true;
-        try{ DB = JSON.parse(reader.result); }catch(e){ DB = { projects: [] }; }
-        migrateIfNeeded();
+        networkIndexLoaded = true;
+        try{ DB.projects = (JSON.parse(reader.result).projects) || []; }catch(e){ DB.projects = []; }
         setSync('ok', '同期済み');
         renderCurrentScreen();
-        cacheSetDB(JSON.stringify(DB));
+        cacheSet('index', reader.result);
       };
       reader.readAsText(blob);
     })
-    .catch(err=>{
-      networkDataLoaded = true;
+    .catch(async err=>{
+      networkIndexLoaded = true;
       if(err && err.status===409){
-        DB = { projects: [] };
-        setSync('ok', '新規データ');
-        renderCurrentScreen();
-        cacheSetDB(JSON.stringify(DB));
+        const migrated = await legacyMigrateOldDataJson();
+        if(migrated){
+          DB.projects = migrated;
+          setSync('ok', 'データを移行しました');
+          renderCurrentScreen();
+          cacheSet('index', JSON.stringify({ projects: buildIndexArray() }));
+          migrated.forEach(p=> cacheSet('project:'+p.id, JSON.stringify(p)));
+        }else{
+          DB.projects = [];
+          setSync('ok', '新規データ');
+          renderCurrentScreen();
+          cacheSet('index', JSON.stringify({ projects: [] }));
+        }
       }else{
         console.error(err);
         setSync('err', '読み込みエラー');
@@ -1180,48 +1286,85 @@ function loadFromDropbox(manual){
     });
 }
 
-function migrateIfNeeded(){
-  if(!DB.projects){
-    const oldPhotos = Array.isArray(DB.photos) ? DB.photos : [];
-    DB = { projects: [] };
-    if(oldPhotos.length){
-      DB.projects.push({
-        id: uid(), name: '既存データ', createdAt: new Date().toISOString(),
-        drawings: [],
-        photos: oldPhotos.map(p=>({ ...p, kind:'map', votes: p.votes||[] }))
-      });
-    }
+// ── 個別プロジェクトの読み込み(開いた時だけ実データを取得) ─
+function replaceProjectInDB(full){
+  const idx = DB.projects.findIndex(x=>x.id===full.id);
+  if(idx>=0) DB.projects[idx] = full; else DB.projects.push(full);
+}
+async function loadProjectFromNetwork(id, silent){
+  const stub = DB.projects.find(x=>x.id===id);
+  if(!silent) openLoadingModal(stub ? stub.name : '', stub ? projPhotoCount(stub) : null);
+  let success = false;
+  try{
+    const res = await dbx.filesDownload({ path: projectPath(id) });
+    const text = await res.result.fileBlob.text();
+    const full = JSON.parse(text);
+    migrateProjectFields(full);
+    replaceProjectInDB(full);
+    cacheSet('project:'+id, JSON.stringify(full));
+    success = true;
+  }catch(err){
+    console.error(err);
+    if(!silent) toast('プロジェクトの読み込みに失敗しました');
   }
-  DB.projects.forEach(p=>{
-    p.drawings = p.drawings || [];
-    p.groups = p.groups || [];
-    p.photos = p.photos || [];
-    p.drawings.forEach(d=>{
-      if(d.lat !== undefined && !d.geo){
-        d.geo = { lat:d.lat, lng:d.lng, rotationDeg:0, metersPerPixel:null };
-        delete d.lat; delete d.lng;
-      }
-    });
-    p.photos.forEach(ph=>{
-      ph.votes = ph.votes || [];
-      ph.comments = ph.comments || [];
-      if(ph.kind==='map' && ph.geoLat===undefined){ ph.geoLat = ph.lat; ph.geoLng = ph.lng; }
-      if(ph.kind==='pool' && !ph.poolScope){ ph.poolScope = 'map'; }
-      ph.comments.forEach(c=>{ if(!c.id) c.id = uid(); });
-    });
+  if(!silent) closeLoadingModal();
+  return success;
+}
+function refreshProjectFromNetwork(id, silent){
+  loadProjectFromNetwork(id, silent).then(()=>{
+    if(currentProjectId===id && !markerDragActive) renderProjectScreen(false);
   });
+}
+function manualReload(){
+  if(currentProjectId){
+    const id = currentProjectId;
+    setSync('busy', '再読み込み中…');
+    loadProjectFromNetwork(id, true).then(ok=>{
+      if(currentProjectId===id && !markerDragActive) renderProjectScreen(false);
+      if(ok){ setSync('ok', '同期済み'); }
+      else{ setSync('err', '読み込みエラー'); toast('プロジェクトの読み込みに失敗しました'); }
+    });
+  }else{
+    loadFromDropbox(true);
+  }
+}
+async function ensureProjectLoaded(stub){
+  const cached = await cacheGet('project:'+stub.id);
+  if(cached){
+    try{
+      const full = JSON.parse(cached);
+      migrateProjectFields(full);
+      replaceProjectInDB(full);
+      refreshProjectFromNetwork(stub.id, true);
+      return true;
+    }catch(e){ console.error(e); }
+  }
+  return await loadProjectFromNetwork(stub.id, false);
 }
 
 function scheduleSave(){
   setSync('busy', '保存中…');
-  cacheSetDB(JSON.stringify(DB));
+  cacheSet('index', JSON.stringify({ projects: buildIndexArray() }));
+  if(currentProjectId){
+    const p = currentProject();
+    if(p && isProjectLoaded(p)) cacheSet('project:'+p.id, JSON.stringify(p));
+  }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveToDropbox, 1200);
 }
-function saveToDropbox(){
-  dbx.filesUpload({ path: DBX_DATA_PATH, mode: { '.tag':'overwrite' }, contents: JSON.stringify(DB) })
-    .then(()=> setSync('ok', '同期済み'))
-    .catch(err=>{ console.error(err); setSync('err', '保存エラー'); toast('Dropboxへの保存に失敗しました'); });
+async function saveToDropbox(){
+  try{
+    await dbx.filesUpload({ path: DBX_INDEX_PATH, mode: { '.tag':'overwrite' }, contents: JSON.stringify({ projects: buildIndexArray() }) });
+    if(currentProjectId){
+      const p = currentProject();
+      if(p && isProjectLoaded(p)){
+        await dbx.filesUpload({ path: projectPath(p.id), mode: { '.tag':'overwrite' }, contents: JSON.stringify(p) });
+      }
+    }
+    setSync('ok', '同期済み');
+  }catch(err){
+    console.error(err); setSync('err', '保存エラー'); toast('Dropboxへの保存に失敗しました');
+  }
 }
 
 function renderCurrentScreen(){
@@ -1249,7 +1392,7 @@ function renderProjectList(){
     el.className = 'projCard';
     el.innerHTML = `<button class="projEditBtn" title="編集">⋯</button><div class="pname"></div><div class="pmeta"></div>`;
     el.querySelector('.pname').textContent = p.name;
-    el.querySelector('.pmeta').textContent = `写真 ${p.photos.length}件 ・ 図面 ${p.drawings.length}件`;
+    el.querySelector('.pmeta').textContent = `写真 ${projPhotoCount(p)}件 ・ 図面 ${projDrawingCount(p)}件`;
     el.querySelector('.projEditBtn').addEventListener('click', ev=>{ ev.stopPropagation(); openProjEditModal(p.id); });
     el.addEventListener('click', ()=> openProject(p.id));
     grid.appendChild(el);
@@ -1259,7 +1402,7 @@ function renderProjectList(){
 function createProject(){
   const name = document.getElementById('newProjName').value.trim();
   if(!name){ toast('プロジェクト名を入力してください'); return; }
-  const p = { id: uid(), name, createdAt: new Date().toISOString(), drawings: [], photos: [] };
+  const p = { id: uid(), name, createdAt: new Date().toISOString(), drawings: [], photos: [], groups: [] };
   DB.projects.push(p);
   document.getElementById('newProjModal').classList.remove('open');
   scheduleSave();
@@ -1288,10 +1431,13 @@ async function deleteProject(){
   const p = DB.projects.find(x=>x.id===editingProjectId);
   if(!p) return;
   if(!(await showConfirm(`「${p.name}」を削除しますか？写真・図面・コメントもすべて削除されます。`, {danger:true, okLabel:'削除する'}))) return;
-  DB.projects = DB.projects.filter(x=>x.id!==editingProjectId);
+  const delId = editingProjectId;
+  DB.projects = DB.projects.filter(x=>x.id!==delId);
+  if(currentProjectId===delId) currentProjectId = null;
   document.getElementById('projEditModal').classList.remove('open');
   renderProjectList();
   scheduleSave();
+  dbx.filesDeleteV2({ path: projectPath(delId) }).catch(()=>{});
 }
 
 function goToProjectList(){
@@ -1302,11 +1448,19 @@ function goToProjectList(){
 // ══════════════════════════════════════════════════════════
 // PROJECT SCREEN
 // ══════════════════════════════════════════════════════════
-function openProject(id){
+async function openProject(id){
   currentProjectId = id;
   currentView = 'map';
   currentDrawingId = null;
   document.querySelectorAll('.tabbtn').forEach(b=> b.classList.toggle('active', b.dataset.view==='map'));
+
+  const stub = DB.projects.find(x=>x.id===id);
+  if(!stub){ currentProjectId = null; goToProjectList(); return; }
+
+  if(!isProjectLoaded(stub)){
+    const ok = await ensureProjectLoaded(stub);
+    if(!ok || currentProjectId!==id){ currentProjectId = null; renderProjectList(); return; }
+  }
   renderProjectScreen(true);
 }
 
@@ -1368,7 +1522,8 @@ function renderMapView(){
     const marker = L.marker([ph.lat, ph.lng], { icon, draggable:true });
     marker.photoId = ph.id;
     marker.on('click', ()=>openPanel(ph.id, false, [ph.id]));
-    marker.on('dragend', ()=> onMarkerDragEnd(marker, { type:'photo', id:ph.id }));
+    marker.on('dragstart', ()=>{ markerDragActive = true; });
+    marker.on('dragend', ()=>{ markerDragActive = false; onMarkerDragEnd(marker, { type:'photo', id:ph.id }); });
     photoClusterGroup.addLayer(marker);
   });
 
@@ -1385,7 +1540,8 @@ function renderMapView(){
     const marker = L.marker([g.lat, g.lng], { icon, draggable:true });
     marker.groupId = g.id;
     marker.on('click', ()=> openPanel(cover.id, false, members.map(m=>m.id)));
-    marker.on('dragend', ()=> onMarkerDragEnd(marker, { type:'group', id:g.id }));
+    marker.on('dragstart', ()=>{ markerDragActive = true; });
+    marker.on('dragend', ()=>{ markerDragActive = false; onMarkerDragEnd(marker, { type:'group', id:g.id }); });
     photoClusterGroup.addLayer(marker);
   });
 
@@ -1521,7 +1677,7 @@ async function repairDrawingGeo(d){
     await ensureDrawingDims(d);
     if(!d.geo.metersPerPixel){ d.geo.metersPerPixel = 20 / d.imgW; }
     scheduleSave();
-    if(currentView==='map') renderMapView();
+    if(currentView==='map' && !markerDragActive) renderMapView();
   }catch(err){ console.error(err); }
   repairingDrawings.delete(d.id);
 }
@@ -1554,6 +1710,7 @@ function repositionAllOverlays(){
   Object.values(drawingOverlayEls).forEach(o=> positionOverlayEl(o.wrap, o.d.geo, o.d.imgW, o.d.imgH));
   if(calibOverlayEl && calibratingDrawing) positionOverlayEl(calibOverlayEl, calibratingDrawing.geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
   if(calibHandleEl) positionCalibHandle();
+  if(calibResizeEl) positionCalibResizeHandle();
 }
 
 // ── 位置合わせモード ─────────────────────────────────────
@@ -1567,6 +1724,20 @@ function positionCalibHandle(){
   const dist = screenH/2 + 26;
   calibHandleEl.style.left = (pt.x + dist*Math.sin(rad)) + 'px';
   calibHandleEl.style.top = (pt.y - dist*Math.cos(rad)) + 'px';
+}
+function positionCalibResizeHandle(){
+  const geo = calibratingDrawing.geo;
+  const zoom = map.getZoom();
+  const mpp = metersPerPixelAtZoom(geo.lat, zoom);
+  const screenW = (calibratingDrawing.imgW * geo.metersPerPixel) / mpp;
+  const screenH = (calibratingDrawing.imgH * geo.metersPerPixel) / mpp;
+  const pt = map.latLngToLayerPoint([geo.lat, geo.lng]);
+  const rad = geo.rotationDeg * Math.PI/180;
+  const hw = screenW/2, hh = screenH/2;
+  const rx = hw*Math.cos(rad) - hh*Math.sin(rad);
+  const ry = hw*Math.sin(rad) + hh*Math.cos(rad);
+  calibResizeEl.style.left = (pt.x + rx) + 'px';
+  calibResizeEl.style.top = (pt.y + ry) + 'px';
 }
 async function startCalibration(drawingId){
   const p = currentProject();
@@ -1593,12 +1764,19 @@ async function startCalibration(drawingId){
   calibHandleEl.title = 'ドラッグして向きを回転';
   pane.appendChild(calibHandleEl);
 
+  calibResizeEl = document.createElement('div');
+  calibResizeEl.className = 'calibResizeHandle';
+  calibResizeEl.title = 'ドラッグして拡大縮小';
+  pane.appendChild(calibResizeEl);
+
   positionOverlayEl(calibOverlayEl, d.geo, d.imgW, d.imgH);
   positionCalibHandle();
+  positionCalibResizeHandle();
   bindCalibDrag();
   bindCalibRotate();
+  bindCalibResize();
 
-  document.getElementById('calibHint').textContent = '図面をドラッグして移動、丸いハンドルをドラッグして向きを回転できます。';
+  document.getElementById('calibHint').textContent = '図面をドラッグして移動、丸いハンドルで回転、四角いハンドルで拡大縮小できます。';
   document.getElementById('calibBar').classList.add('open');
 }
 function bindCalibDrag(){
@@ -1615,6 +1793,7 @@ function bindCalibDrag(){
       calibratingDrawing.geo.lng = newLatLng.lng;
       positionOverlayEl(calibOverlayEl, calibratingDrawing.geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
       positionCalibHandle();
+      positionCalibResizeHandle();
     }
     function onUp(){
       document.removeEventListener('pointermove', onMove);
@@ -1638,6 +1817,37 @@ function bindCalibRotate(){
       geo.rotationDeg = angleDeg;
       positionOverlayEl(calibOverlayEl, geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
       positionCalibHandle();
+      positionCalibResizeHandle();
+    }
+    function onUp(){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp, { once:true });
+  });
+}
+function bindCalibResize(){
+  calibResizeEl.addEventListener('pointerdown', e=>{
+    e.preventDefault();
+    function onMove(ev){
+      const geo = calibratingDrawing.geo;
+      const centerPt = map.latLngToContainerPoint([geo.lat, geo.lng]);
+      const mapRect = document.getElementById('map').getBoundingClientRect();
+      const dx = ev.clientX - (mapRect.left + centerPt.x);
+      const dy = ev.clientY - (mapRect.top + centerPt.y);
+      const newDist = Math.hypot(dx, dy);
+      const zoom = map.getZoom();
+      const mpp = metersPerPixelAtZoom(geo.lat, zoom);
+      const screenW = (calibratingDrawing.imgW * geo.metersPerPixel) / mpp;
+      const screenH = (calibratingDrawing.imgH * geo.metersPerPixel) / mpp;
+      const curDist = Math.hypot(screenW/2, screenH/2);
+      if(curDist > 4 && newDist > 4){
+        geo.metersPerPixel = Math.max(0.0005, geo.metersPerPixel * (newDist/curDist));
+      }
+      positionOverlayEl(calibOverlayEl, geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
+      positionCalibHandle();
+      positionCalibResizeHandle();
     }
     function onUp(){
       document.removeEventListener('pointermove', onMove);
@@ -1677,11 +1887,12 @@ function onCalibMapClick(e){
     calibratingDrawing.geo.metersPerPixel *= factor;
     positionOverlayEl(calibOverlayEl, calibratingDrawing.geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
     positionCalibHandle();
+    positionCalibResizeHandle();
     toast(`縮尺を更新しました(1px ≈ ${calibratingDrawing.geo.metersPerPixel.toFixed(4)}m)`);
   }else{
     toast('距離の指定に失敗しました。やり直してください。');
   }
-  document.getElementById('calibHint').textContent = '図面をドラッグして移動、丸いハンドルをドラッグして向きを回転できます。';
+  document.getElementById('calibHint').textContent = '図面をドラッグして移動、丸いハンドルで回転、四角いハンドルで拡大縮小できます。';
 }
 function finishCalibrationCleanup(){
   document.getElementById('calibBar').classList.remove('open');
@@ -1689,6 +1900,7 @@ function finishCalibrationCleanup(){
   calibDistMode = false;
   if(calibOverlayEl){ calibOverlayEl.remove(); calibOverlayEl = null; }
   if(calibHandleEl){ calibHandleEl.remove(); calibHandleEl = null; }
+  if(calibResizeEl){ calibResizeEl.remove(); calibResizeEl = null; }
   calibratingDrawing = null; calibBackupGeo = null;
   renderMapView(); renderMapPoolTray();
 }
@@ -1817,6 +2029,7 @@ function makeAddChip(scope){
 function makePhotoChip(ph){
   const chip = document.createElement('div');
   chip.className = 'poolChip';
+  chip.dataset.photoId = ph.id;
   const img = document.createElement('img');
   img.src = ph.thumb;
   chip.appendChild(img);
@@ -2232,12 +2445,50 @@ function makeDivider(title){
 function makeTile(ph, p){
   const el = document.createElement('div');
   el.className = 'tile';
+  el.dataset.photoId = ph.id;
   const tag = ph.kind==='map' ? 'MAP' : ((p.drawings.find(d=>d.id===ph.drawingId)||{}).name || '図面');
   const votes = (ph.votes||[]).length;
   el.innerHTML = `<img src="${ph.thumb}"><div class="tileTag"></div>${votes>0?`<div class="tileStar">★ ${votes}</div>`:''}`;
   el.querySelector('.tileTag').textContent = tag;
   el.addEventListener('click', ()=> openPanel(ph.id, true));
   return el;
+}
+
+// ── 1枚単位の差分更新(全件再描画を避けるためのパッチ処理) ──
+function patchTileImage(photoId, newSrc){
+  document.querySelectorAll(`.tile[data-photo-id="${photoId}"] img`).forEach(img=> img.src = newSrc);
+}
+function patchPoolChipImage(photoId, newSrc){
+  document.querySelectorAll(`.poolChip[data-photo-id="${photoId}"] img`).forEach(img=> img.src = newSrc);
+}
+function patchTileVotes(ph){
+  const votes = (ph.votes||[]).length;
+  document.querySelectorAll(`.tile[data-photo-id="${ph.id}"]`).forEach(tile=>{
+    let badge = tile.querySelector('.tileStar');
+    if(votes>0){
+      if(!badge){ badge = document.createElement('div'); badge.className = 'tileStar'; tile.appendChild(badge); }
+      badge.textContent = `★ ${votes}`;
+    }else if(badge){
+      badge.remove();
+    }
+  });
+}
+function updateGroupMarkerIfCover(ph){
+  if(!ph.groupId || !photoClusterGroup) return;
+  const p = currentProject();
+  const g = (p.groups||[]).find(x=>x.id===ph.groupId);
+  if(!g || g.coverPhotoId!==ph.id) return;
+  const members = p.photos.filter(x=>x.groupId===g.id);
+  const isActive = members.some(m=>m.id===activePhotoId);
+  photoClusterGroup.eachLayer(m=>{
+    if(m.groupId===g.id){
+      m.setIcon(L.divIcon({
+        className:'',
+        html:`<div class="groupPin${isActive?' active':''}"><img src="${ph.thumb}"><span class="groupPinCount">${members.length}</span></div>`,
+        iconSize:[38,38], iconAnchor:[19,19]
+      }));
+    }
+  });
 }
 
 // ── PANEL (shared) ───────────────────────────────────────
@@ -2345,7 +2596,9 @@ function toggleVote(){
   const i = ph.votes.indexOf(name);
   if(i>=0) ph.votes.splice(i,1); else ph.votes.push(name);
   updateStarBtn(ph);
-  renderThumbView();
+  const sortBtn = document.querySelector('.sortbtn.active');
+  if(sortBtn && sortBtn.dataset.sort==='vote'){ renderThumbView(); }
+  else{ patchTileVotes(ph); }
   scheduleSave();
 }
 
@@ -2544,8 +2797,9 @@ async function rotateActivePhoto(deg){
   try{
     ph.thumb = await rotateDataUrl(ph.thumb, deg);
     document.getElementById('panelImg').src = ph.thumb;
-    renderThumbView(); renderMapPoolTray(); renderDrawingPoolTray();
-    if(currentView==='drawing') renderDrawingPins();
+    patchTileImage(ph.id, ph.thumb);
+    patchPoolChipImage(ph.id, ph.thumb);
+    updateGroupMarkerIfCover(ph);
     scheduleSave();
   }catch(err){ console.error(err); toast('回転に失敗しました'); }
 }
