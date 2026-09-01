@@ -170,6 +170,11 @@ button{font-family:inherit;}
 #drawingInner img{width:100%;height:100%;display:block;user-select:none;-webkit-user-drag:none;}
 #drawingInner.dragOver{outline:3px dashed var(--blue);outline-offset:-3px;}
 .dpin{position:absolute;transform:translate(-50%,-50%);cursor:grab;touch-action:none;}
+.dlabel{
+  position:absolute;transform:translate(-50%,-50%);color:var(--ink);font-weight:700;
+  white-space:nowrap;cursor:grab;touch-action:none;user-select:none;line-height:1;
+  text-shadow:0 0 4px #fff,0 0 4px #fff,0 0 6px #fff,0 0 6px #fff;
+}
 #drawingEmpty{
   position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   text-align:center;color:var(--muted);width:80%;
@@ -441,7 +446,7 @@ button{font-family:inherit;}
 .modalBg .card{background:var(--panel);border-radius:var(--radius);padding:24px;max-width:420px;width:100%;}
 .modalBg h2{margin:0 0 6px;font-size:15px;}
 .modalBg p{font-size:12px;color:var(--muted);line-height:1.7;margin:0 0 14px;}
-.modalBg input[type=text],.modalBg input[type=password]{
+.modalBg input[type=text],.modalBg input[type=password],.modalBg input[type=number]{
   width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;
   font-size:13px;background:var(--paper);color:var(--ink);margin-bottom:12px;font-family:inherit;
 }
@@ -578,6 +583,7 @@ button{font-family:inherit;}
       <div class="zoomCtrl">
         <button id="zoomIn">＋</button>
         <button id="zoomOut">－</button>
+        <button id="addLabelBtn" title="文字を追加">Aa</button>
       </div>
     </div>
     <div class="poolTray">
@@ -718,6 +724,32 @@ button{font-family:inherit;}
       <button class="ghostBtn" id="newDrawCancel">キャンセル</button>
       <button class="primaryBtn" id="newDrawCreate">追加する</button>
     </div>
+  </div>
+</div>
+
+<div class="modalBg" id="newLabelModal">
+  <div class="card">
+    <h2>文字を追加</h2>
+    <p>図面上に配置する文字(例: A棟)とフォントサイズを指定してください。サイズは図面画像に対する相対値なので、拡大縮小しても図面と同じ比率で表示されます。</p>
+    <input type="text" id="newLabelText" placeholder="表示する文字(例: A棟)">
+    <input type="number" id="newLabelSize" placeholder="フォントサイズ" value="48" min="8" max="400">
+    <div class="modalBtns">
+      <button class="ghostBtn" id="newLabelCancel">キャンセル</button>
+      <button class="primaryBtn" id="newLabelNext">図面に配置する</button>
+    </div>
+  </div>
+</div>
+
+<div class="modalBg" id="labelEditModal">
+  <div class="card">
+    <h2>文字を編集</h2>
+    <input type="text" id="labelEditText" placeholder="表示する文字">
+    <input type="number" id="labelEditSize" placeholder="フォントサイズ" min="8" max="400">
+    <div class="modalBtns">
+      <button class="ghostBtn" id="labelDeleteBtn">削除する</button>
+      <button class="primaryBtn" id="labelSaveBtn">保存</button>
+    </div>
+    <button id="labelEditClose" class="closeBtn">閉じる</button>
   </div>
 </div>
 
@@ -1070,6 +1102,16 @@ function bindUI(){
   document.getElementById('drawEmptyBtn').addEventListener('click', openNewDrawModal);
   document.getElementById('zoomIn').addEventListener('click', ()=> setDrawingZoom(drawingZoom+0.25));
   document.getElementById('zoomOut').addEventListener('click', ()=> setDrawingZoom(drawingZoom-0.25));
+  document.getElementById('addLabelBtn').addEventListener('click', openNewLabelModal);
+  document.getElementById('newLabelCancel').addEventListener('click', ()=>{
+    pendingLabel = null;
+    document.getElementById('newLabelModal').classList.remove('open');
+  });
+  document.getElementById('newLabelNext').addEventListener('click', startLabelPlacement);
+  document.getElementById('drawingInner').addEventListener('click', onDrawingInnerClickForLabel);
+  document.getElementById('labelEditClose').addEventListener('click', ()=> document.getElementById('labelEditModal').classList.remove('open'));
+  document.getElementById('labelSaveBtn').addEventListener('click', saveLabelEdit);
+  document.getElementById('labelDeleteBtn').addEventListener('click', deleteLabelEdit);
 
   document.getElementById('newDrawFileRow').addEventListener('click', ()=>document.getElementById('newDrawingFileInput').click());
   document.getElementById('newDrawingFileInput').addEventListener('change', e=>{
@@ -1192,6 +1234,7 @@ function migrateProjectFields(p){
   p.groups = p.groups || [];
   p.photos = p.photos || [];
   p.drawings.forEach(d=>{
+    d.labels = d.labels || [];
     if(d.lat !== undefined && !d.geo){
       d.geo = { lat:d.lat, lng:d.lng, rotationDeg:0, metersPerPixel:null };
       delete d.lat; delete d.lng;
@@ -1570,6 +1613,21 @@ function positionThumbOverlayEl(el, d){
   el.style.height = h + 'px';
   el.style.transform = `translate(-50%, -50%) rotate(${d.geo.rotationDeg}deg)`;
 }
+function appendLabelsToOverlay(wrap, d, currentWidthPx){
+  wrap.querySelectorAll('.dlabel').forEach(el=>el.remove());
+  if(!d.imgW) return;
+  const scale = currentWidthPx / d.imgW;
+  (d.labels||[]).forEach(lb=>{
+    const el = document.createElement('div');
+    el.className = 'dlabel';
+    el.textContent = lb.text;
+    el.style.left = lb.x+'%';
+    el.style.top = lb.y+'%';
+    el.style.fontSize = Math.max(4, lb.fontSize*scale) + 'px';
+    el.style.pointerEvents = 'none';
+    wrap.appendChild(el);
+  });
+}
 let drawingThumbEls = {};
 function clearDrawingThumbs(){
   Object.values(drawingThumbEls).forEach(o=> o.wrap.remove());
@@ -1593,6 +1651,7 @@ function renderDrawingMarkers(){
     });
     pane.appendChild(wrap);
     positionThumbOverlayEl(wrap, d);
+    appendLabelsToOverlay(wrap, d, drawingThumbSize(d, map.getZoom()).w);
     drawingThumbEls[d.id] = { wrap, d };
   });
 }
@@ -1732,8 +1791,14 @@ function zoomToFitDrawing(d){
   map.fitBounds(bounds, { padding:[50,50], maxZoom:21, animate:false });
 }
 function repositionAllOverlays(){
-  Object.values(drawingThumbEls).forEach(o=> positionThumbOverlayEl(o.wrap, o.d));
-  if(calibOverlayEl && calibratingDrawing) positionOverlayEl(calibOverlayEl, calibratingDrawing.geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
+  Object.values(drawingThumbEls).forEach(o=>{
+    positionThumbOverlayEl(o.wrap, o.d);
+    appendLabelsToOverlay(o.wrap, o.d, drawingThumbSize(o.d, map.getZoom()).w);
+  });
+  if(calibOverlayEl && calibratingDrawing){
+    positionOverlayEl(calibOverlayEl, calibratingDrawing.geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
+    appendLabelsToOverlay(calibOverlayEl, calibratingDrawing, calibOverlayEl.clientWidth);
+  }
   if(calibHandleEl) positionCalibHandle();
   if(calibResizeEl) positionCalibResizeHandle();
 }
@@ -1798,6 +1863,7 @@ async function startCalibration(drawingId){
   pane.appendChild(calibResizeEl);
 
   positionOverlayEl(calibOverlayEl, d.geo, d.imgW, d.imgH);
+  appendLabelsToOverlay(calibOverlayEl, d, calibOverlayEl.clientWidth);
   positionCalibHandle();
   positionCalibResizeHandle();
   bindCalibDrag();
@@ -2255,6 +2321,26 @@ function renderDrawingPins(){
     el.style.top = ph.y+'%';
     el.innerHTML = `<div class="pin${ph.id===activePhotoId?' active':''}"><span>${idx+1}</span></div>`;
     makeDrawingPinDraggable(el, ph);
+    el.addEventListener('click', e=> e.stopPropagation());
+    inner.appendChild(el);
+  });
+  renderDrawingLabels();
+}
+function renderDrawingLabels(){
+  const d = currentDrawing();
+  const inner = document.getElementById('drawingInner');
+  inner.querySelectorAll('.dlabel').forEach(el=>el.remove());
+  if(!d || !d.imgW) return;
+  const scale = inner.clientWidth / d.imgW;
+  (d.labels||[]).forEach(lb=>{
+    const el = document.createElement('div');
+    el.className = 'dlabel';
+    el.textContent = lb.text;
+    el.style.left = lb.x+'%';
+    el.style.top = lb.y+'%';
+    el.style.fontSize = Math.max(6, lb.fontSize*scale) + 'px';
+    makeLabelDraggable(el, lb);
+    el.addEventListener('click', e=> e.stopPropagation());
     inner.appendChild(el);
   });
 }
@@ -2291,6 +2377,98 @@ function makeDrawingPinDraggable(el, ph){
     document.addEventListener('pointerup', onUp, { once:true });
   });
 }
+function makeLabelDraggable(el, lb){
+  el.addEventListener('pointerdown', e=>{
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX, startY = e.clientY;
+    let moved = false, pendingX, pendingY;
+    function onMove(ev){
+      const dx = ev.clientX-startX, dy = ev.clientY-startY;
+      if(!moved && Math.hypot(dx,dy) > 6) moved = true;
+      if(moved){
+        const rect = document.getElementById('drawingInner').getBoundingClientRect();
+        let x = (ev.clientX-rect.left)/rect.width*100;
+        let y = (ev.clientY-rect.top)/rect.height*100;
+        x = Math.max(0, Math.min(100, x));
+        y = Math.max(0, Math.min(100, y));
+        el.style.left = x+'%'; el.style.top = y+'%';
+        pendingX = x; pendingY = y;
+      }
+    }
+    function onUp(){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      if(moved && pendingX!==undefined){
+        lb.x = pendingX; lb.y = pendingY;
+        scheduleSave();
+      }else if(!moved){
+        openLabelEditModal(lb.id);
+      }
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp, { once:true });
+  });
+}
+
+let pendingLabel = null;
+let editingLabelId = null;
+function openNewLabelModal(){
+  document.getElementById('newLabelText').value = '';
+  document.getElementById('newLabelSize').value = 48;
+  document.getElementById('newLabelModal').classList.add('open');
+}
+function startLabelPlacement(){
+  const text = document.getElementById('newLabelText').value.trim();
+  const size = parseInt(document.getElementById('newLabelSize').value, 10) || 48;
+  if(!text){ toast('文字を入力してください'); return; }
+  pendingLabel = { text, fontSize: size };
+  document.getElementById('newLabelModal').classList.remove('open');
+  toast('図面上をタップして配置してください');
+}
+function onDrawingInnerClickForLabel(e){
+  if(!pendingLabel) return;
+  const d = currentDrawing();
+  if(!d) return;
+  const rect = document.getElementById('drawingInner').getBoundingClientRect();
+  const x = (e.clientX-rect.left)/rect.width*100;
+  const y = (e.clientY-rect.top)/rect.height*100;
+  d.labels = d.labels || [];
+  d.labels.push({ id: uid(), text: pendingLabel.text, fontSize: pendingLabel.fontSize, x, y });
+  pendingLabel = null;
+  renderDrawingLabels();
+  scheduleSave();
+  toast('文字を配置しました');
+}
+function openLabelEditModal(id){
+  editingLabelId = id;
+  const d = currentDrawing();
+  const lb = (d.labels||[]).find(x=>x.id===id);
+  if(!lb) return;
+  document.getElementById('labelEditText').value = lb.text;
+  document.getElementById('labelEditSize').value = lb.fontSize;
+  document.getElementById('labelEditModal').classList.add('open');
+}
+function saveLabelEdit(){
+  const d = currentDrawing();
+  const lb = (d.labels||[]).find(x=>x.id===editingLabelId);
+  if(!lb) return;
+  const text = document.getElementById('labelEditText').value.trim();
+  const size = parseInt(document.getElementById('labelEditSize').value, 10);
+  if(!text){ toast('文字を入力してください'); return; }
+  lb.text = text;
+  lb.fontSize = size || lb.fontSize;
+  document.getElementById('labelEditModal').classList.remove('open');
+  renderDrawingLabels();
+  scheduleSave();
+}
+async function deleteLabelEdit(){
+  const d = currentDrawing();
+  if(!(await showConfirm('この文字を削除しますか？', {danger:true, okLabel:'削除する'}))) return;
+  d.labels = (d.labels||[]).filter(x=>x.id!==editingLabelId);
+  document.getElementById('labelEditModal').classList.remove('open');
+  renderDrawingLabels();
+  scheduleSave();
+}
 
 function updateDrawingInnerSize(){
   const img = document.getElementById('drawingImg');
@@ -2302,6 +2480,7 @@ function updateDrawingInnerSize(){
   const h = w * (img.naturalHeight / img.naturalWidth);
   inner.style.width = w+'px';
   inner.style.height = h+'px';
+  renderDrawingLabels();
 }
 function setDrawingZoom(z){
   drawingZoom = Math.max(0.5, Math.min(3, z));
@@ -2330,7 +2509,7 @@ async function createDrawing(){
     }
     const dims = await getImageDims(image);
     const p = currentProject();
-    const d = { id: uid(), name, image, imgW: dims.w, imgH: dims.h, geo: null };
+    const d = { id: uid(), name, image, imgW: dims.w, imgH: dims.h, geo: null, labels: [] };
     p.drawings.push(d);
     currentDrawingId = d.id;
     document.getElementById('newDrawModal').classList.remove('open');
