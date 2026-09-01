@@ -226,6 +226,16 @@ button{font-family:inherit;}
   position:absolute;top:-20px;left:50%;transform:translateX(-50%);white-space:nowrap;
   background:var(--ink);color:#fff;font-size:10px;padding:2px 8px;border-radius:8px;pointer-events:none;
 }
+.drawMarkerWrap{display:flex;flex-direction:column;align-items:center;gap:2px;}
+.drawMarkerLabel{
+  max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:var(--ink);color:#fff;font-size:9px;padding:2px 6px;border-radius:8px;
+}
+.drawMarker{
+  width:44px;height:44px;border-radius:8px;overflow:hidden;background:#000;
+  border:2px solid var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.4);
+}
+.drawMarker img{width:100%;height:100%;object-fit:cover;display:block;}
 .calibOverlayWrap{
   position:absolute;transform-origin:center center;cursor:grab;touch-action:none;z-index:1;
 }
@@ -1342,7 +1352,7 @@ async function ensureProjectLoaded(stub){
   return await loadProjectFromNetwork(stub.id, false);
 }
 
-function scheduleSave(){
+function scheduleSave(immediate){
   setSync('busy', '保存中…');
   cacheSet('index', JSON.stringify({ projects: buildIndexArray() }));
   if(currentProjectId){
@@ -1350,7 +1360,8 @@ function scheduleSave(){
     if(p && isProjectLoaded(p)) cacheSet('project:'+p.id, JSON.stringify(p));
   }
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveToDropbox, 1200);
+  if(immediate){ saveToDropbox(); }
+  else{ saveTimer = setTimeout(saveToDropbox, 1200); }
 }
 async function saveToDropbox(){
   try{
@@ -1545,7 +1556,26 @@ function renderMapView(){
     photoClusterGroup.addLayer(marker);
   });
 
-  renderDrawingOverlays();
+  renderDrawingMarkers();
+}
+function renderDrawingMarkers(){
+  markersLayer.clearLayers();
+  const p = currentProject();
+  if(!p) return;
+  p.drawings.filter(d=> d.geo).forEach(d=>{
+    if(calibratingDrawing && calibratingDrawing.id===d.id) return;
+    const icon = L.divIcon({
+      className:'',
+      html:`<div class="drawMarkerWrap"><div class="drawMarkerLabel">${escapeHtml(d.name)}</div><div class="drawMarker"><img src="${d.image}"></div></div>`,
+      iconSize:[70,64], iconAnchor:[35,41]
+    });
+    const marker = L.marker([d.geo.lat, d.geo.lng], { icon }).addTo(markersLayer);
+    marker.on('click', ()=>{
+      currentDrawingId = d.id;
+      switchView('drawing');
+      renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray();
+    });
+  });
 }
 function findMergeTarget(marker, self){
   const myPt = map.latLngToContainerPoint(marker.getLatLng());
@@ -1579,6 +1609,7 @@ function onMarkerDragEnd(marker, self){
     const g = p.groups.find(x=>x.id===self.id);
     g.lat = ll.lat; g.lng = ll.lng;
   }
+  if(photoClusterGroup && photoClusterGroup.refreshClusters){ photoClusterGroup.refreshClusters(marker); }
   scheduleSave();
 }
 function mergeIntoTarget(self, target){
@@ -1648,8 +1679,7 @@ function fitAll(silent){
   map.fitBounds(L.latLngBounds(points), { padding:[40,40], maxZoom:17 });
 }
 
-// ── 図面の実寸ジオオーバーレイ(地図に敷き込み表示) ─────────
-let drawingOverlayEls = {};
+// ── 図面のジオ座標ユーティリティ(位置合わせモードで使用) ──
 function metersPerPixelAtZoom(lat, zoom){
   return 156543.03392 * Math.cos(lat*Math.PI/180) / Math.pow(2, zoom);
 }
@@ -1665,49 +1695,24 @@ function positionOverlayEl(el, geo, imgW, imgH){
   el.style.height = screenH + 'px';
   el.style.transform = `translate(-50%, -50%) rotate(${geo.rotationDeg}deg)`;
 }
-function clearDrawingOverlays(){
-  Object.values(drawingOverlayEls).forEach(o=> o.wrap.remove());
-  drawingOverlayEls = {};
+function metersToLatLngOffset(lat, meters){
+  return {
+    dLat: meters / 111320,
+    dLng: meters / (111320 * Math.cos(lat*Math.PI/180))
+  };
 }
-const repairingDrawings = new Set();
-async function repairDrawingGeo(d){
-  if(repairingDrawings.has(d.id)) return;
-  repairingDrawings.add(d.id);
-  try{
-    await ensureDrawingDims(d);
-    if(!d.geo.metersPerPixel){ d.geo.metersPerPixel = 20 / d.imgW; }
-    scheduleSave();
-    if(currentView==='map' && !markerDragActive) renderMapView();
-  }catch(err){ console.error(err); }
-  repairingDrawings.delete(d.id);
-}
-function renderDrawingOverlays(){
-  clearDrawingOverlays();
-  const p = currentProject();
-  if(!p || !map) return;
-  const pane = map.getPanes().overlayPane;
-  p.drawings.filter(d=> d.geo).forEach(d=>{
-    if(calibratingDrawing && calibratingDrawing.id===d.id) return;
-    if(!d.imgW || !d.imgH || !d.geo.metersPerPixel){
-      repairDrawingGeo(d);
-      return;
-    }
-    const wrap = document.createElement('div');
-    wrap.className = 'geoOverlayWrap';
-    wrap.innerHTML = `<img src="${d.image}"><div class="geoOverlayLabel"></div>`;
-    wrap.querySelector('.geoOverlayLabel').textContent = d.name;
-    wrap.querySelector('img').addEventListener('click', ()=>{
-      currentDrawingId = d.id;
-      switchView('drawing');
-      renderDrawingTabs(); renderDrawingView(); renderDrawingPoolTray();
-    });
-    pane.appendChild(wrap);
-    positionOverlayEl(wrap, d.geo, d.imgW, d.imgH);
-    drawingOverlayEls[d.id] = { wrap, d };
-  });
+function zoomToFitDrawing(d){
+  const realW = d.imgW * d.geo.metersPerPixel;
+  const realH = d.imgH * d.geo.metersPerPixel;
+  const diag = Math.sqrt(realW*realW + realH*realH) * 0.6;
+  const off = metersToLatLngOffset(d.geo.lat, diag);
+  const bounds = L.latLngBounds(
+    [d.geo.lat - off.dLat, d.geo.lng - off.dLng],
+    [d.geo.lat + off.dLat, d.geo.lng + off.dLng]
+  );
+  map.fitBounds(bounds, { padding:[50,50], maxZoom:21, animate:false });
 }
 function repositionAllOverlays(){
-  Object.values(drawingOverlayEls).forEach(o=> positionOverlayEl(o.wrap, o.d.geo, o.d.imgW, o.d.imgH));
   if(calibOverlayEl && calibratingDrawing) positionOverlayEl(calibOverlayEl, calibratingDrawing.geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
   if(calibHandleEl) positionCalibHandle();
   if(calibResizeEl) positionCalibResizeHandle();
@@ -1744,13 +1749,16 @@ async function startCalibration(drawingId){
   const d = p.drawings.find(x=>x.id===drawingId);
   if(!d || !d.geo) return;
   await ensureDrawingDims(d);
+  if(!d.geo.metersPerPixel){ d.geo.metersPerPixel = 20 / d.imgW; }
   calibratingDrawing = d;
   calibBackupGeo = { ...d.geo };
 
   currentView = 'map';
   document.querySelectorAll('.tabbtn').forEach(b=> b.classList.toggle('active', b.dataset.view==='map'));
   showPview('mapView');
-  setTimeout(()=> map.invalidateSize(), 30);
+  await new Promise(resolve=> setTimeout(resolve, 30));
+  map.invalidateSize();
+  zoomToFitDrawing(d);
   renderMapView();
 
   const pane = map.getPanes().overlayPane;
@@ -1906,7 +1914,7 @@ function finishCalibrationCleanup(){
 }
 function finishCalibration(){
   finishCalibrationCleanup();
-  scheduleSave();
+  scheduleSave(true);
   toast('位置合わせを確定しました');
 }
 function cancelCalibration(){
