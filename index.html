@@ -1103,25 +1103,75 @@ function bindUI(){
 }
 
 // ── DROPBOX SYNC ─────────────────────────────────────────
+// ── ローカルキャッシュ(IndexedDB) ─────────────────────────
+// 起動のたびにDropboxからの全件ダウンロードを待たせないよう、
+// 前回のデータをブラウザ内に保存しておき、まずそれを即表示する。
+// 裏側でDropboxの最新版を取得し、届き次第静かに差し替える。
+const CACHE_DB_NAME = 'fieldmap_cache';
+const CACHE_STORE = 'kv';
+function openCacheDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(CACHE_DB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(CACHE_STORE); };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+async function cacheGetDB(){
+  try{
+    const db = await openCacheDB();
+    return await new Promise(resolve=>{
+      const tx = db.transaction(CACHE_STORE, 'readonly');
+      const req = tx.objectStore(CACHE_STORE).get('db');
+      req.onsuccess = ()=> resolve(req.result || null);
+      req.onerror = ()=> resolve(null);
+    });
+  }catch(e){ return null; }
+}
+async function cacheSetDB(jsonStr){
+  try{
+    const db = await openCacheDB();
+    const tx = db.transaction(CACHE_STORE, 'readwrite');
+    tx.objectStore(CACHE_STORE).put(jsonStr, 'db');
+  }catch(e){ /* キャッシュ保存に失敗しても同期自体には影響しない */ }
+}
+
+let networkDataLoaded = false;
 function loadFromDropbox(manual){
+  networkDataLoaded = false;
+  if(!manual){
+    cacheGetDB().then(cached=>{
+      if(cached && !networkDataLoaded){
+        try{
+          DB = JSON.parse(cached);
+          migrateIfNeeded();
+          renderCurrentScreen();
+        }catch(e){ console.error(e); }
+      }
+    });
+  }
   setSync('busy', manual ? '再読み込み中…' : '読み込み中…');
   dbx.filesDownload({ path: DBX_DATA_PATH })
     .then(res=>{
       const blob = res.result.fileBlob;
       const reader = new FileReader();
       reader.onload = ()=>{
+        networkDataLoaded = true;
         try{ DB = JSON.parse(reader.result); }catch(e){ DB = { projects: [] }; }
         migrateIfNeeded();
         setSync('ok', '同期済み');
         renderCurrentScreen();
+        cacheSetDB(JSON.stringify(DB));
       };
       reader.readAsText(blob);
     })
     .catch(err=>{
+      networkDataLoaded = true;
       if(err && err.status===409){
         DB = { projects: [] };
         setSync('ok', '新規データ');
         renderCurrentScreen();
+        cacheSetDB(JSON.stringify(DB));
       }else{
         console.error(err);
         setSync('err', '読み込みエラー');
@@ -1164,6 +1214,7 @@ function migrateIfNeeded(){
 
 function scheduleSave(){
   setSync('busy', '保存中…');
+  cacheSetDB(JSON.stringify(DB));
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveToDropbox, 1200);
 }
@@ -2365,20 +2416,31 @@ function sendComment(){
   renderComments(ph);
   scheduleSave();
 }
+function advanceQueueAfterRemoval(removedId){
+  const idx = photoQueue.indexOf(removedId);
+  const newQueue = photoQueue.filter(id => id !== removedId);
+  if(newQueue.length){
+    const nextIndex = Math.min(idx, newQueue.length - 1);
+    openPanel(newQueue[nextIndex], false, newQueue);
+  }else{
+    closePanel();
+  }
+}
 async function returnToPool(){
   const ph = findPhoto(activePhotoId);
   if(!ph || ph.kind==='pool') return;
   if(!(await showConfirm('この写真をプールに戻しますか？(コメントは残ります)', {okLabel:'プールに戻す'}))) return;
   if(ph.groupId) leaveGroup(ph, false);
   const scope = ph.kind==='map' ? 'map' : ph.drawingId;
+  const returnedId = ph.id;
   ph.kind = 'pool';
   ph.poolScope = scope;
   delete ph.lat; delete ph.lng; delete ph.geoLat; delete ph.geoLng;
   delete ph.drawingId; delete ph.x; delete ph.y;
-  closePanel();
   renderMapView(); if(currentView==='drawing') renderDrawingPins();
   renderThumbView(); renderMapPoolTray(); renderDrawingPoolTray();
   scheduleSave();
+  advanceQueueAfterRemoval(returnedId);
 }
 function openMoveToDrawModal(){
   const p = currentProject();
@@ -2402,14 +2464,15 @@ function moveActivePhotoToDrawing(drawingId){
   const ph = findPhoto(activePhotoId);
   if(!ph || ph.kind!=='map') return;
   if(ph.groupId) leaveGroup(ph, false);
+  const movedId = ph.id;
   ph.kind = 'pool';
   ph.poolScope = drawingId;
   delete ph.lat; delete ph.lng; delete ph.geoLat; delete ph.geoLng;
   document.getElementById('moveToDrawModal').classList.remove('open');
-  closePanel();
   renderMapView(); renderMapPoolTray(); renderDrawingPoolTray(); renderThumbView();
   scheduleSave();
   toast('図面のプールに移動しました');
+  advanceQueueAfterRemoval(movedId);
 }
 async function deletePoolPhoto(photoId){
   const p = currentProject();
