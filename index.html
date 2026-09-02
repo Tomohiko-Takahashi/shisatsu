@@ -126,7 +126,7 @@ button{font-family:inherit;}
   position:relative;width:38px;height:38px;border-radius:50%;overflow:hidden;
   border:3px solid var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.4);background:#000;
 }
-.groupPin img{width:100%;height:100%;object-fit:cover;display:block;}
+.groupPin img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none;}
 .groupPin.active{border-color:var(--warn);}
 .groupPinCount{
   position:absolute;right:-4px;bottom:-4px;background:var(--ink);color:#fff;
@@ -546,6 +546,7 @@ button{font-family:inherit;}
     <div id="map"></div>
     <div class="emptyState" id="mapEmpty"><div class="big">まだ写真がありません</div><div class="sm">下のプールの「+」から追加してください</div></div>
     <button class="fitBtn" id="fitBtn" title="全体表示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+    <button class="fitBtn" id="addMapLabelBtn" title="文字を追加" style="bottom:180px;">Aa</button>
     <div id="calibBar">
       <div class="calibTitle">位置合わせモード</div>
       <div class="calibHint" id="calibHint">図面をドラッグして移動、丸いハンドルをドラッグして向きを回転できます。</div>
@@ -730,12 +731,12 @@ button{font-family:inherit;}
 <div class="modalBg" id="newLabelModal">
   <div class="card">
     <h2>文字を追加</h2>
-    <p>図面上に配置する文字(例: A棟)とフォントサイズを指定してください。サイズは図面画像に対する相対値なので、拡大縮小しても図面と同じ比率で表示されます。</p>
+    <p id="newLabelSizeHint">図面画像に対する相対サイズ(px)で指定します。</p>
     <input type="text" id="newLabelText" placeholder="表示する文字(例: A棟)">
-    <input type="number" id="newLabelSize" placeholder="フォントサイズ" value="48" min="8" max="400">
+    <input type="number" id="newLabelSize" placeholder="フォントサイズ" value="48" min="0.1" max="400" step="any">
     <div class="modalBtns">
       <button class="ghostBtn" id="newLabelCancel">キャンセル</button>
-      <button class="primaryBtn" id="newLabelNext">図面に配置する</button>
+      <button class="primaryBtn" id="newLabelNext">配置する</button>
     </div>
   </div>
 </div>
@@ -1039,6 +1040,7 @@ async function init(){
     openPanel(ids[0], false, ids);
   });
   map.on('move zoom viewreset', repositionAllOverlays);
+  map.on('click', onMapClickForLabel);
 
   bindUI();
   loadFromDropbox();
@@ -1102,7 +1104,8 @@ function bindUI(){
   document.getElementById('drawEmptyBtn').addEventListener('click', openNewDrawModal);
   document.getElementById('zoomIn').addEventListener('click', ()=> setDrawingZoom(drawingZoom+0.25));
   document.getElementById('zoomOut').addEventListener('click', ()=> setDrawingZoom(drawingZoom-0.25));
-  document.getElementById('addLabelBtn').addEventListener('click', openNewLabelModal);
+  document.getElementById('addLabelBtn').addEventListener('click', ()=> openNewLabelModal(currentDrawingId));
+  document.getElementById('addMapLabelBtn').addEventListener('click', ()=> openNewLabelModal('map'));
   document.getElementById('newLabelCancel').addEventListener('click', ()=>{
     pendingLabel = null;
     document.getElementById('newLabelModal').classList.remove('open');
@@ -1142,7 +1145,8 @@ function bindUI(){
     const ph = findPhoto(activePhotoId);
     if(!ph) return;
     leaveGroup(ph, false);
-    renderMapView(); renderThumbView(); scheduleSave();
+    if(ph.kind==='drawing'){ renderDrawingPins(); } else { renderMapView(); }
+    renderThumbView(); scheduleSave();
     openPanel(ph.id, false, [ph.id]);
     toast('グループから外しました');
   });
@@ -1233,6 +1237,7 @@ function migrateProjectFields(p){
   p.drawings = p.drawings || [];
   p.groups = p.groups || [];
   p.photos = p.photos || [];
+  p.mapLabels = p.mapLabels || [];
   p.drawings.forEach(d=>{
     d.labels = d.labels || [];
     if(d.lat !== undefined && !d.geo){
@@ -1447,7 +1452,7 @@ function renderProjectList(){
 function createProject(){
   const name = document.getElementById('newProjName').value.trim();
   if(!name){ toast('プロジェクト名を入力してください'); return; }
-  const p = { id: uid(), name, createdAt: new Date().toISOString(), drawings: [], photos: [], groups: [] };
+  const p = { id: uid(), name, createdAt: new Date().toISOString(), drawings: [], photos: [], groups: [], mapLabels: [] };
   DB.projects.push(p);
   document.getElementById('newProjModal').classList.remove('open');
   scheduleSave();
@@ -1591,6 +1596,37 @@ function renderMapView(){
   });
 
   renderDrawingMarkers();
+  renderMapLabels();
+}
+let mapLabelEls = {};
+function clearMapLabels(){
+  Object.values(mapLabelEls).forEach(el=> el.remove());
+  mapLabelEls = {};
+}
+function positionMapLabelEl(el, lb){
+  const zoom = map.getZoom();
+  const mpp = metersPerPixelAtZoom(lb.lat, zoom);
+  const fontPx = Math.max(6, lb.fontSize / mpp);
+  const pt = map.latLngToLayerPoint([lb.lat, lb.lng]);
+  el.style.left = pt.x + 'px';
+  el.style.top = pt.y + 'px';
+  el.style.fontSize = fontPx + 'px';
+}
+function renderMapLabels(){
+  clearMapLabels();
+  const p = currentProject();
+  if(!p || !map) return;
+  const pane = map.getPanes().overlayPane;
+  (p.mapLabels||[]).forEach(lb=>{
+    const el = document.createElement('div');
+    el.className = 'dlabel';
+    el.textContent = lb.text;
+    pane.appendChild(el);
+    positionMapLabelEl(el, lb);
+    makeMapLabelDraggable(el, lb);
+    el.addEventListener('click', e=> e.stopPropagation());
+    mapLabelEls[lb.id] = el;
+  });
 }
 const DRAW_THUMB_BASE_SIZE = 60; // 基準ズームでの目安サイズ(px、長辺基準)
 const DRAW_THUMB_BASE_ZOOM = 17;
@@ -1727,7 +1763,10 @@ function leaveGroup(ph, doRender){
       g.coverPhotoId = remaining[0].id;
     }
   }
-  if(doRender !== false){ renderMapView(); renderThumbView(); scheduleSave(); }
+  if(doRender !== false){
+    if(ph.kind==='drawing'){ renderDrawingPins(); } else { renderMapView(); }
+    renderThumbView(); scheduleSave();
+  }
 }
 function setCoverPhoto(){
   const ph = findPhoto(activePhotoId);
@@ -1737,7 +1776,7 @@ function setCoverPhoto(){
   if(!g) return;
   g.coverPhotoId = ph.id;
   document.getElementById('setCoverBtn').style.display = 'none';
-  renderMapView();
+  if(ph.kind==='drawing'){ renderDrawingPins(); } else { renderMapView(); }
   scheduleSave();
   toast('代表写真にしました');
 }
@@ -1794,6 +1833,11 @@ function repositionAllOverlays(){
   Object.values(drawingThumbEls).forEach(o=>{
     positionThumbOverlayEl(o.wrap, o.d);
     appendLabelsToOverlay(o.wrap, o.d, drawingThumbSize(o.d, map.getZoom()).w);
+  });
+  Object.entries(mapLabelEls).forEach(([id, el])=>{
+    const p = currentProject();
+    const lb = p && (p.mapLabels||[]).find(x=>x.id===id);
+    if(lb) positionMapLabelEl(el, lb);
   });
   if(calibOverlayEl && calibratingDrawing){
     positionOverlayEl(calibOverlayEl, calibratingDrawing.geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
@@ -1940,6 +1984,7 @@ function bindCalibResize(){
         geo.metersPerPixel = Math.max(0.0005, geo.metersPerPixel * (newDist/curDist));
       }
       positionOverlayEl(calibOverlayEl, geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
+      appendLabelsToOverlay(calibOverlayEl, calibratingDrawing, calibOverlayEl.clientWidth);
       positionCalibHandle();
       positionCalibResizeHandle();
     }
@@ -1980,6 +2025,7 @@ function onCalibMapClick(e){
     const factor = dReal / dCurrent;
     calibratingDrawing.geo.metersPerPixel *= factor;
     positionOverlayEl(calibOverlayEl, calibratingDrawing.geo, calibratingDrawing.imgW, calibratingDrawing.imgH);
+    appendLabelsToOverlay(calibOverlayEl, calibratingDrawing, calibOverlayEl.clientWidth);
     positionCalibHandle();
     positionCalibResizeHandle();
     toast(`縮尺を更新しました(1px ≈ ${calibratingDrawing.geo.metersPerPixel.toFixed(4)}m)`);
@@ -2312,11 +2358,13 @@ function renderDrawingPins(){
   const inner = document.getElementById('drawingInner');
   inner.querySelectorAll('.dpin').forEach(el=>el.remove());
   if(!d) return;
-  const pins = p.photos.filter(ph=>ph.kind==='drawing' && ph.drawingId===d.id);
-  const sorted = [...pins].sort((a,b)=> new Date(a.time)-new Date(b.time));
+  const allPins = p.photos.filter(ph=>ph.kind==='drawing' && ph.drawingId===d.id);
+  const ungrouped = allPins.filter(ph=> !ph.groupId);
+  const sorted = [...ungrouped].sort((a,b)=> new Date(a.time)-new Date(b.time));
   sorted.forEach((ph, idx)=>{
     const el = document.createElement('div');
     el.className = 'dpin';
+    el.dataset.photoId = ph.id;
     el.style.left = ph.x+'%';
     el.style.top = ph.y+'%';
     el.innerHTML = `<div class="pin${ph.id===activePhotoId?' active':''}"><span>${idx+1}</span></div>`;
@@ -2324,7 +2372,64 @@ function renderDrawingPins(){
     el.addEventListener('click', e=> e.stopPropagation());
     inner.appendChild(el);
   });
+
+  (p.groups||[]).filter(g=> g.drawingId===d.id).forEach(g=>{
+    const members = p.photos.filter(ph=> ph.groupId===g.id);
+    if(members.length < 2) return;
+    const cover = members.find(ph=>ph.id===g.coverPhotoId) || members[0];
+    const isActive = members.some(m=>m.id===activePhotoId);
+    const el = document.createElement('div');
+    el.className = 'dpin';
+    el.dataset.groupId = g.id;
+    el.style.left = g.x+'%';
+    el.style.top = g.y+'%';
+    el.innerHTML = `<div class="groupPin${isActive?' active':''}"><img src="${cover.thumb}"><span class="groupPinCount">${members.length}</span></div>`;
+    makeDrawingGroupDraggable(el, g);
+    el.addEventListener('click', e=> e.stopPropagation());
+    inner.appendChild(el);
+  });
+
   renderDrawingLabels();
+}
+function findDrawingMergeTarget(el){
+  const rect = el.getBoundingClientRect();
+  const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+  let found = null;
+  document.querySelectorAll('#drawingInner .dpin').forEach(other=>{
+    if(found || other===el) return;
+    const orect = other.getBoundingClientRect();
+    const ocx = orect.left + orect.width/2, ocy = orect.top + orect.height/2;
+    if(Math.hypot(cx-ocx, cy-ocy) < 26){
+      if(other.dataset.photoId) found = { type:'photo', id: other.dataset.photoId, x: parseFloat(other.style.left), y: parseFloat(other.style.top) };
+      else if(other.dataset.groupId) found = { type:'group', id: other.dataset.groupId, x: parseFloat(other.style.left), y: parseFloat(other.style.top) };
+    }
+  });
+  return found;
+}
+function mergeDrawingTarget(self, target, drawingId){
+  const p = currentProject();
+  p.groups = p.groups || [];
+  if(self.type==='photo' && target.type==='photo'){
+    const g = { id: uid(), drawingId, x: target.x, y: target.y, coverPhotoId: target.id };
+    p.groups.push(g);
+    findPhoto(self.id).groupId = g.id;
+    findPhoto(target.id).groupId = g.id;
+  }else if(self.type==='photo' && target.type==='group'){
+    findPhoto(self.id).groupId = target.id;
+  }else if(self.type==='group' && target.type==='photo'){
+    const g = p.groups.find(x=>x.id===self.id);
+    findPhoto(target.id).groupId = g.id;
+    g.x = target.x; g.y = target.y;
+  }else if(self.type==='group' && target.type==='group'){
+    const draggedGroup = p.groups.find(x=>x.id===self.id);
+    const targetGroup = p.groups.find(x=>x.id===target.id);
+    p.photos.filter(ph=>ph.groupId===draggedGroup.id).forEach(ph=> ph.groupId = targetGroup.id);
+    p.groups = p.groups.filter(x=>x.id!==draggedGroup.id);
+  }
+  renderDrawingPins();
+  renderThumbView();
+  scheduleSave();
+  toast('グループにまとめました');
 }
 function renderDrawingLabels(){
   const d = currentDrawing();
@@ -2367,10 +2472,55 @@ function makeDrawingPinDraggable(el, ph){
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       if(moved && pendingX!==undefined){
-        ph.x = pendingX; ph.y = pendingY;
-        scheduleSave();
+        const target = findDrawingMergeTarget(el);
+        if(target){
+          mergeDrawingTarget({ type:'photo', id:ph.id }, target, currentDrawing().id);
+        }else{
+          ph.x = pendingX; ph.y = pendingY;
+          scheduleSave();
+        }
       }else if(!moved){
         openPanel(ph.id);
+      }
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp, { once:true });
+  });
+}
+function makeDrawingGroupDraggable(el, g){
+  el.addEventListener('pointerdown', e=>{
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX, startY = e.clientY;
+    let moved = false, pendingX, pendingY;
+    function onMove(ev){
+      const dx = ev.clientX-startX, dy = ev.clientY-startY;
+      if(!moved && Math.hypot(dx,dy) > 6) moved = true;
+      if(moved){
+        const rect = document.getElementById('drawingInner').getBoundingClientRect();
+        let x = (ev.clientX-rect.left)/rect.width*100;
+        let y = (ev.clientY-rect.top)/rect.height*100;
+        x = Math.max(0, Math.min(100, x));
+        y = Math.max(0, Math.min(100, y));
+        el.style.left = x+'%'; el.style.top = y+'%';
+        pendingX = x; pendingY = y;
+      }
+    }
+    function onUp(){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      if(moved && pendingX!==undefined){
+        const target = findDrawingMergeTarget(el);
+        if(target && !(target.type==='group' && target.id===g.id)){
+          mergeDrawingTarget({ type:'group', id:g.id }, target, currentDrawing().id);
+        }else{
+          g.x = pendingX; g.y = pendingY;
+          scheduleSave();
+        }
+      }else if(!moved){
+        const p = currentProject();
+        const members = p.photos.filter(ph=>ph.groupId===g.id);
+        const cover = members.find(ph=>ph.id===g.coverPhotoId) || members[0];
+        openPanel(cover.id, false, members.map(m=>m.id));
       }
     }
     document.addEventListener('pointermove', onMove);
@@ -2402,7 +2552,37 @@ function makeLabelDraggable(el, lb){
         lb.x = pendingX; lb.y = pendingY;
         scheduleSave();
       }else if(!moved){
-        openLabelEditModal(lb.id);
+        openLabelEditModal(lb.id, currentDrawing().id);
+      }
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp, { once:true });
+  });
+}
+function makeMapLabelDraggable(el, lb){
+  el.addEventListener('pointerdown', e=>{
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX, startY = e.clientY;
+    let moved = false, pendingLatLng = null;
+    function onMove(ev){
+      const dx = ev.clientX-startX, dy = ev.clientY-startY;
+      if(!moved && Math.hypot(dx,dy) > 6) moved = true;
+      if(moved){
+        const startPt = map.latLngToContainerPoint([lb.lat, lb.lng]);
+        const newPt = L.point(startPt.x+dx, startPt.y+dy);
+        pendingLatLng = map.containerPointToLatLng(newPt);
+        const layerPt = map.latLngToLayerPoint(pendingLatLng);
+        el.style.left = layerPt.x+'px'; el.style.top = layerPt.y+'px';
+      }
+    }
+    function onUp(){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      if(moved && pendingLatLng){
+        lb.lat = pendingLatLng.lat; lb.lng = pendingLatLng.lng;
+        scheduleSave();
+      }else if(!moved){
+        openLabelEditModal(lb.id, 'map');
       }
     }
     document.addEventListener('pointermove', onMove);
@@ -2410,25 +2590,38 @@ function makeLabelDraggable(el, lb){
   });
 }
 
-let pendingLabel = null;
+let pendingLabel = null; // { text, fontSize, context: 'map' | drawingId }
 let editingLabelId = null;
-function openNewLabelModal(){
+let editingLabelContext = null;
+function findLabelByContext(id, context){
+  const p = currentProject();
+  if(!p) return null;
+  if(context==='map') return (p.mapLabels||[]).find(x=>x.id===id);
+  const d = p.drawings.find(x=>x.id===context);
+  return d ? (d.labels||[]).find(x=>x.id===id) : null;
+}
+function openNewLabelModal(context){
+  document.getElementById('newLabelModal').dataset.context = context;
   document.getElementById('newLabelText').value = '';
-  document.getElementById('newLabelSize').value = 48;
+  document.getElementById('newLabelSize').value = context==='map' ? 3 : 48;
+  document.getElementById('newLabelSizeHint').textContent = context==='map'
+    ? '地図上の実際の大きさ(メートル)で指定します。'
+    : '図面画像に対する相対サイズ(px)で指定します。';
   document.getElementById('newLabelModal').classList.add('open');
 }
 function startLabelPlacement(){
+  const context = document.getElementById('newLabelModal').dataset.context;
   const text = document.getElementById('newLabelText').value.trim();
-  const size = parseInt(document.getElementById('newLabelSize').value, 10) || 48;
+  const size = parseFloat(document.getElementById('newLabelSize').value) || (context==='map' ? 3 : 48);
   if(!text){ toast('文字を入力してください'); return; }
-  pendingLabel = { text, fontSize: size };
+  pendingLabel = { text, fontSize: size, context };
   document.getElementById('newLabelModal').classList.remove('open');
-  toast('図面上をタップして配置してください');
+  toast(context==='map' ? '地図上をタップして配置してください' : '図面上をタップして配置してください');
 }
 function onDrawingInnerClickForLabel(e){
-  if(!pendingLabel) return;
+  if(!pendingLabel || pendingLabel.context==='map') return;
   const d = currentDrawing();
-  if(!d) return;
+  if(!d || pendingLabel.context !== d.id) return;
   const rect = document.getElementById('drawingInner').getBoundingClientRect();
   const x = (e.clientX-rect.left)/rect.width*100;
   const y = (e.clientY-rect.top)/rect.height*100;
@@ -2439,34 +2632,49 @@ function onDrawingInnerClickForLabel(e){
   scheduleSave();
   toast('文字を配置しました');
 }
-function openLabelEditModal(id){
+function onMapClickForLabel(e){
+  if(!pendingLabel || pendingLabel.context!=='map') return;
+  const p = currentProject();
+  p.mapLabels = p.mapLabels || [];
+  p.mapLabels.push({ id: uid(), text: pendingLabel.text, fontSize: pendingLabel.fontSize, lat: e.latlng.lat, lng: e.latlng.lng });
+  pendingLabel = null;
+  renderMapLabels();
+  scheduleSave();
+  toast('文字を配置しました');
+}
+function openLabelEditModal(id, context){
   editingLabelId = id;
-  const d = currentDrawing();
-  const lb = (d.labels||[]).find(x=>x.id===id);
+  editingLabelContext = context;
+  const lb = findLabelByContext(id, context);
   if(!lb) return;
   document.getElementById('labelEditText').value = lb.text;
   document.getElementById('labelEditSize').value = lb.fontSize;
   document.getElementById('labelEditModal').classList.add('open');
 }
 function saveLabelEdit(){
-  const d = currentDrawing();
-  const lb = (d.labels||[]).find(x=>x.id===editingLabelId);
+  const lb = findLabelByContext(editingLabelId, editingLabelContext);
   if(!lb) return;
   const text = document.getElementById('labelEditText').value.trim();
-  const size = parseInt(document.getElementById('labelEditSize').value, 10);
+  const size = parseFloat(document.getElementById('labelEditSize').value);
   if(!text){ toast('文字を入力してください'); return; }
   lb.text = text;
   lb.fontSize = size || lb.fontSize;
   document.getElementById('labelEditModal').classList.remove('open');
-  renderDrawingLabels();
+  if(editingLabelContext==='map'){ renderMapLabels(); } else { renderDrawingLabels(); }
   scheduleSave();
 }
 async function deleteLabelEdit(){
-  const d = currentDrawing();
   if(!(await showConfirm('この文字を削除しますか？', {danger:true, okLabel:'削除する'}))) return;
-  d.labels = (d.labels||[]).filter(x=>x.id!==editingLabelId);
+  const p = currentProject();
+  if(editingLabelContext==='map'){
+    p.mapLabels = (p.mapLabels||[]).filter(x=>x.id!==editingLabelId);
+    renderMapLabels();
+  }else{
+    const d = p.drawings.find(x=>x.id===editingLabelContext);
+    if(d) d.labels = (d.labels||[]).filter(x=>x.id!==editingLabelId);
+    renderDrawingLabels();
+  }
   document.getElementById('labelEditModal').classList.remove('open');
-  renderDrawingLabels();
   scheduleSave();
 }
 
@@ -2720,7 +2928,7 @@ function openPanel(id, fromThumb, queue){
   renderMapView(); if(currentView==='drawing') renderDrawingPins();
 
   const p = currentProject();
-  const grp = ph.kind==='map' && ph.groupId ? p.groups.find(x=>x.id===ph.groupId) : null;
+  const grp = ph.groupId ? p.groups.find(x=>x.id===ph.groupId) : null;
 
   document.getElementById('panelImg').src = ph.thumb;
   if(ph.kind==='map'){
