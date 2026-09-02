@@ -548,7 +548,7 @@ button{font-family:inherit;}
     <div class="emptyState" id="mapEmpty"><div class="big">まだ写真がありません</div><div class="sm">下のプールの「+」から追加してください</div></div>
     <button class="fitBtn" id="fitBtn" title="全体表示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
     <button class="fitBtn" id="addMapLabelBtn" title="文字を追加" style="bottom:180px;">Aa</button>
-    <button class="fitBtn" id="autoGroupBtn" title="近い写真をまとめてグループ化(10m以内)" style="bottom:228px;">🔗</button>
+    <button class="fitBtn" id="autoGroupBtn" title="近い写真をまとめてグループ化(2m以内)" style="bottom:228px;">🔗</button>
     <div id="calibBar">
       <div class="calibTitle">位置合わせモード</div>
       <div class="calibHint" id="calibHint">図面をドラッグして移動、丸いハンドルをドラッグして向きを回転できます。</div>
@@ -1036,13 +1036,16 @@ async function init(){
     spiderfyOnMaxZoom: false,
     showCoverageOnHover: false,
     maxClusterRadius: 60,
-    iconCreateFunction: makeClusterIcon
+    iconCreateFunction: makeClusterIcon,
+    animate: false,
+    animateAddingMarkers: false,
+    chunkedLoading: true
   }).addTo(map);
   photoClusterGroup.on('clusterclick', e=>{
     const ids = e.layer.getAllChildMarkers().map(m=>m.photoId);
     openPanel(ids[0], false, ids);
   });
-  map.on('move zoom viewreset', repositionAllOverlays);
+  map.on('moveend zoomend viewreset', repositionAllOverlays);
   map.on('click', onMapClickForLabel);
 
   bindUI();
@@ -1712,7 +1715,7 @@ function findMergeTarget(marker, self){
   return found;
 }
 // ── 実距離による自動グループ化(表示上のクラスタが解けないほど近い写真) ──
-const AUTO_GROUP_DISTANCE_M = 10;
+const AUTO_GROUP_DISTANCE_M = 2;
 function checkAutoGroupForPhoto(photoId){
   const p = currentProject();
   const ph = findPhoto(photoId);
@@ -1778,7 +1781,7 @@ function autoGroupAllNearbyPhotos(){
   });
   renderMapView(); renderThumbView(); renderMapPoolTray();
   scheduleSave();
-  toast(created ? `${created}件のグループを作成しました(対象写真${grouped}件)` : '10m以内に近い写真は見つかりませんでした');
+  toast(created ? `${created}件のグループを作成しました(対象写真${grouped}件)` : '2m以内に近い写真は見つかりませんでした');
 }
 
 function onMarkerDragEnd(marker, self){
