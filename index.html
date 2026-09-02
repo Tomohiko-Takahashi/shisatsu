@@ -547,6 +547,7 @@ button{font-family:inherit;}
     <div class="emptyState" id="mapEmpty"><div class="big">まだ写真がありません</div><div class="sm">下のプールの「+」から追加してください</div></div>
     <button class="fitBtn" id="fitBtn" title="全体表示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
     <button class="fitBtn" id="addMapLabelBtn" title="文字を追加" style="bottom:180px;">Aa</button>
+    <button class="fitBtn" id="autoGroupBtn" title="近い写真をまとめてグループ化(10m以内)" style="bottom:228px;">🔗</button>
     <div id="calibBar">
       <div class="calibTitle">位置合わせモード</div>
       <div class="calibHint" id="calibHint">図面をドラッグして移動、丸いハンドルをドラッグして向きを回転できます。</div>
@@ -1106,6 +1107,7 @@ function bindUI(){
   document.getElementById('zoomOut').addEventListener('click', ()=> setDrawingZoom(drawingZoom-0.25));
   document.getElementById('addLabelBtn').addEventListener('click', ()=> openNewLabelModal(currentDrawingId));
   document.getElementById('addMapLabelBtn').addEventListener('click', ()=> openNewLabelModal('map'));
+  document.getElementById('autoGroupBtn').addEventListener('click', autoGroupAllNearbyPhotos);
   document.getElementById('newLabelCancel').addEventListener('click', ()=>{
     pendingLabel = null;
     document.getElementById('newLabelModal').classList.remove('open');
@@ -1706,6 +1708,76 @@ function findMergeTarget(marker, self){
   });
   return found;
 }
+// ── 実距離による自動グループ化(表示上のクラスタが解けないほど近い写真) ──
+const AUTO_GROUP_DISTANCE_M = 10;
+function checkAutoGroupForPhoto(photoId){
+  const p = currentProject();
+  const ph = findPhoto(photoId);
+  if(!ph || ph.kind!=='map' || ph.groupId) return false;
+  const myLatLng = L.latLng(ph.lat, ph.lng);
+  p.groups = p.groups || [];
+
+  let nearestGroup = null, nearestGroupDist = Infinity;
+  p.groups.forEach(g=>{
+    if(g.drawingId) return;
+    const d = myLatLng.distanceTo(L.latLng(g.lat, g.lng));
+    if(d < AUTO_GROUP_DISTANCE_M && d < nearestGroupDist){ nearestGroup = g; nearestGroupDist = d; }
+  });
+  if(nearestGroup){
+    ph.groupId = nearestGroup.id;
+    scheduleSave();
+    return true;
+  }
+
+  let nearestPhoto = null, nearestPhotoDist = Infinity;
+  p.photos.filter(x=>x.kind==='map' && x.id!==ph.id && !x.groupId).forEach(other=>{
+    const d = myLatLng.distanceTo(L.latLng(other.lat, other.lng));
+    if(d < AUTO_GROUP_DISTANCE_M && d < nearestPhotoDist){ nearestPhoto = other; nearestPhotoDist = d; }
+  });
+  if(nearestPhoto){
+    const g = { id: uid(), lat: nearestPhoto.lat, lng: nearestPhoto.lng, coverPhotoId: nearestPhoto.id };
+    p.groups.push(g);
+    nearestPhoto.groupId = g.id;
+    ph.groupId = g.id;
+    scheduleSave();
+    return true;
+  }
+  return false;
+}
+// 既存データ向け: プロジェクト内の未グループ写真をまとめて一括チェックする(ボタンから明示的に実行)
+function autoGroupAllNearbyPhotos(){
+  const p = currentProject();
+  const mapPhotos = p.photos.filter(ph=>ph.kind==='map' && !ph.groupId);
+  const n = mapPhotos.length;
+  if(n < 2){ toast('対象になる写真がありません'); return; }
+  const parent = mapPhotos.map((_,i)=>i);
+  function find(i){ while(parent[i]!==i){ parent[i]=parent[parent[i]]; i=parent[i]; } return i; }
+  function union(i,j){ const ri=find(i), rj=find(j); if(ri!==rj) parent[ri]=rj; }
+  for(let i=0;i<n;i++){
+    for(let j=i+1;j<n;j++){
+      const d = L.latLng(mapPhotos[i].lat, mapPhotos[i].lng).distanceTo(L.latLng(mapPhotos[j].lat, mapPhotos[j].lng));
+      if(d < AUTO_GROUP_DISTANCE_M) union(i,j);
+    }
+  }
+  const clusters = {};
+  mapPhotos.forEach((ph,i)=>{
+    const r = find(i);
+    (clusters[r] = clusters[r] || []).push(ph);
+  });
+  p.groups = p.groups || [];
+  let created = 0, grouped = 0;
+  Object.values(clusters).forEach(members=>{
+    if(members.length < 2) return;
+    const g = { id: uid(), lat: members[0].lat, lng: members[0].lng, coverPhotoId: members[0].id };
+    p.groups.push(g);
+    members.forEach(m=> m.groupId = g.id);
+    created++; grouped += members.length;
+  });
+  renderMapView(); renderThumbView(); renderMapPoolTray();
+  scheduleSave();
+  toast(created ? `${created}件のグループを作成しました(対象写真${grouped}件)` : '10m以内に近い写真は見つかりませんでした');
+}
+
 function onMarkerDragEnd(marker, self){
   const ll = marker.getLatLng();
   const target = findMergeTarget(marker, self);
@@ -1719,6 +1791,8 @@ function onMarkerDragEnd(marker, self){
     ph.lat = ll.lat; ph.lng = ll.lng;
     if(ph.id===activePhotoId) document.getElementById('panelCoord').textContent = `${ph.lat.toFixed(6)}, ${ph.lng.toFixed(6)}`;
     updateResetGeoVisibility(ph);
+    const autoGrouped = checkAutoGroupForPhoto(ph.id);
+    if(autoGrouped){ renderMapView(); renderThumbView(); }
   }else{
     const g = p.groups.find(x=>x.id===self.id);
     g.lat = ll.lat; g.lng = ll.lng;
@@ -1816,6 +1890,24 @@ function metersToLatLngOffset(lat, meters){
   return {
     dLat: meters / 111320,
     dLng: meters / (111320 * Math.cos(lat*Math.PI/180))
+  };
+}
+// 緯度経度 → 図面画像上の位置(%)。位置合わせ(geo)済みの図面が対象。
+function latLngToDrawingXY(d, lat, lng){
+  const dLat = lat - d.geo.lat;
+  const dLng = lng - d.geo.lng;
+  const dyNorth = dLat * 111320;
+  const dxEast = dLng * 111320 * Math.cos(d.geo.lat*Math.PI/180);
+  const screenDX = dxEast;
+  const screenDY = -dyNorth;
+  const rad = d.geo.rotationDeg * Math.PI/180;
+  const localX = screenDX*Math.cos(rad) + screenDY*Math.sin(rad);
+  const localY = -screenDX*Math.sin(rad) + screenDY*Math.cos(rad);
+  const pixelX = localX / d.geo.metersPerPixel;
+  const pixelY = localY / d.geo.metersPerPixel;
+  return {
+    x: 50 + (pixelX / d.imgW) * 100,
+    y: 50 + (pixelY / d.imgH) * 100
   };
 }
 function zoomToFitDrawing(d){
@@ -2082,6 +2174,7 @@ async function processPendingUpload(name){
   const scope = pendingUploadScope;
   const existingHashes = new Set(p.photos.filter(ph=>ph.hash).map(ph=>ph.hash));
   let placed = 0, pooled = 0, duplicates = 0;
+  const newlyPlacedIds = [];
 
   for(const file of files){
     try{
@@ -2104,6 +2197,7 @@ async function processPendingUpload(name){
       if(gps && typeof gps.latitude === 'number'){
         p.photos.push({ ...base, kind:'map', lat:gps.latitude, lng:gps.longitude, geoLat:gps.latitude, geoLng:gps.longitude });
         placed++;
+        newlyPlacedIds.push(base.id);
       }else{
         p.photos.push({ ...base, kind:'pool', poolScope: scope });
         pooled++;
@@ -2111,6 +2205,7 @@ async function processPendingUpload(name){
       if(hash) existingHashes.add(hash);
     }catch(err){ console.error(err); }
   }
+  newlyPlacedIds.forEach(id=> checkAutoGroupForPhoto(id));
   renderMapView(); renderMapPoolTray(); renderDrawingPoolTray(); renderThumbView();
   scheduleSave();
   const parts = [];
@@ -3122,7 +3217,8 @@ function openMoveToDrawModal(){
   p.drawings.forEach(d=>{
     const btn = document.createElement('button');
     btn.className = 'moveToDrawItem';
-    btn.textContent = d.name;
+    const calibrated = !!(d.geo && d.geo.metersPerPixel && d.imgW && d.imgH);
+    btn.innerHTML = `${escapeHtml(d.name)}<span style="float:right;font-size:10px;color:${calibrated?'var(--blue-deep)':'var(--muted)'};">${calibrated?'位置合わせ済み':'未位置合わせ'}</span>`;
     btn.addEventListener('click', ()=> moveActivePhotoToDrawing(d.id));
     list.appendChild(btn);
   });
@@ -3133,13 +3229,31 @@ function moveActivePhotoToDrawing(drawingId){
   if(!ph || ph.kind!=='map') return;
   if(ph.groupId) leaveGroup(ph, false);
   const movedId = ph.id;
-  ph.kind = 'pool';
-  ph.poolScope = drawingId;
+  const p = currentProject();
+  const d = p.drawings.find(x=>x.id===drawingId);
+  let placedOnDrawing = false;
+
+  if(d && d.geo && d.geo.metersPerPixel && d.imgW && d.imgH){
+    const pos = latLngToDrawingXY(d, ph.lat, ph.lng);
+    if(pos.x >= -15 && pos.x <= 115 && pos.y >= -15 && pos.y <= 115){
+      ph.kind = 'drawing';
+      ph.drawingId = drawingId;
+      ph.x = Math.max(1, Math.min(99, pos.x));
+      ph.y = Math.max(1, Math.min(99, pos.y));
+      delete ph.poolScope;
+      placedOnDrawing = true;
+    }
+  }
+  if(!placedOnDrawing){
+    ph.kind = 'pool';
+    ph.poolScope = drawingId;
+  }
   delete ph.lat; delete ph.lng; delete ph.geoLat; delete ph.geoLng;
   document.getElementById('moveToDrawModal').classList.remove('open');
   renderMapView(); renderMapPoolTray(); renderDrawingPoolTray(); renderThumbView();
+  if(currentDrawingId===drawingId) renderDrawingPins();
   scheduleSave();
-  toast('図面のプールに移動しました');
+  toast(placedOnDrawing ? '緯度経度から図面上の位置に配置しました' : '図面が未位置合わせ、または範囲外のためプールに追加しました');
   advanceQueueAfterRemoval(movedId);
 }
 async function deletePoolPhoto(photoId){
