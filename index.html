@@ -398,9 +398,10 @@ button{font-family:inherit;}
 #panelMeta .coord{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--blue-deep);margin-bottom:8px;}
 #panelMeta .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:2px;}
 #panelMeta .row b{color:var(--ink);font-weight:500;}
-#panelMetaActions{margin-top:12px;display:flex;gap:16px;}
+#panelMetaActions{margin-top:12px;display:flex;gap:14px;flex-wrap:wrap;}
 #delBtn{font-size:11px;color:var(--warn);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;}
 #moveToDrawBtn{font-size:11px;color:var(--blue-deep);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;}
+#returnToMapBtn{font-size:11px;color:var(--blue-deep);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;}
 #panelVoteRow{padding:10px 16px;border-top:1px solid var(--line);flex:none;}
 #panelVoteRow .starBtn{width:100%;justify-content:center;}
 
@@ -632,6 +633,7 @@ button{font-family:inherit;}
     <div class="row"><span>日時</span><b class="mono" id="panelTime">—</b></div>
     <div id="panelMetaActions">
       <button id="moveToDrawBtn">🗂 図面に移動</button>
+      <button id="returnToMapBtn">🗺️ マップビューに戻す</button>
       <button id="delBtn">プールに戻す</button>
     </div>
     <button id="resetGeoBtn">📍 元の位置に戻す</button>
@@ -1153,6 +1155,7 @@ function bindUI(){
     toast('グループから外しました');
   });
   document.getElementById('moveToDrawBtn').addEventListener('click', openMoveToDrawModal);
+  document.getElementById('returnToMapBtn').addEventListener('click', returnPhotoToMap);
   document.getElementById('moveToDrawClose').addEventListener('click', ()=> document.getElementById('moveToDrawModal').classList.remove('open'));
   document.getElementById('rotateBtn').addEventListener('click', ()=>rotateActivePhoto(90));
   document.getElementById('panelPrevBtn').addEventListener('click', panelPrev);
@@ -2369,6 +2372,7 @@ function tryDropPhoto(photoId, clientX, clientY){
         const x = (clientX-rect.left)/rect.width*100;
         const y = (clientY-rect.top)/rect.height*100;
         ph.kind = 'drawing'; ph.drawingId = d.id; ph.x = x; ph.y = y;
+        ph.origDrawingX = x; ph.origDrawingY = y;
         delete ph.poolScope;
         renderDrawingPins(); renderDrawingPoolTray(); renderThumbView();
         scheduleSave();
@@ -3043,6 +3047,7 @@ function openPanel(id, fromThumb, queue){
   document.getElementById('commentNameInput').value = localStorage.getItem('fieldmap_comment_name') || '';
   document.getElementById('delBtn').style.display = ph.kind==='pool' ? 'none' : 'inline-block';
   document.getElementById('moveToDrawBtn').style.display = (ph.kind==='map' && p.drawings.length) ? 'inline-block' : 'none';
+  document.getElementById('returnToMapBtn').style.display = ph.kind!=='map' ? 'inline-block' : 'none';
   document.getElementById('groupActions').classList.toggle('show', !!grp);
   if(grp) document.getElementById('setCoverBtn').style.display = grp.coverPhotoId===ph.id ? 'none' : 'block';
   updateStarBtn(ph);
@@ -3053,20 +3058,38 @@ function openPanel(id, fromThumb, queue){
 }
 function updateResetGeoVisibility(ph){
   const btn = document.getElementById('resetGeoBtn');
-  if(ph.kind !== 'map'){ btn.style.display = 'none'; return; }
-  if(ph.groupId){ btn.style.display = ph.geoLat!==undefined ? 'block' : 'none'; return; }
-  const moved = ph.geoLat!==undefined && (ph.lat!==ph.geoLat || ph.lng!==ph.geoLng);
-  btn.style.display = moved ? 'block' : 'none';
+  if(ph.kind==='map'){
+    if(ph.groupId){ btn.style.display = ph.geoLat!==undefined ? 'block' : 'none'; return; }
+    const moved = ph.geoLat!==undefined && (ph.lat!==ph.geoLat || ph.lng!==ph.geoLng);
+    btn.style.display = moved ? 'block' : 'none';
+  }else if(ph.kind==='drawing'){
+    if(ph.groupId){ btn.style.display = ph.origDrawingX!==undefined ? 'block' : 'none'; return; }
+    const moved = ph.origDrawingX!==undefined && (ph.x!==ph.origDrawingX || ph.y!==ph.origDrawingY);
+    btn.style.display = moved ? 'block' : 'none';
+  }else{
+    btn.style.display = 'none';
+  }
 }
 function resetToGeotag(){
   const ph = findPhoto(activePhotoId);
-  if(!ph || ph.kind!=='map' || ph.geoLat===undefined) return;
-  if(ph.groupId) leaveGroup(ph, false);
-  ph.lat = ph.geoLat; ph.lng = ph.geoLng;
-  openPanel(ph.id, false, [ph.id]);
-  if(map) map.panTo([ph.lat, ph.lng]);
-  scheduleSave();
-  toast('元の位置に戻しました');
+  if(!ph) return;
+  if(ph.kind==='map'){
+    if(ph.geoLat===undefined) return;
+    if(ph.groupId) leaveGroup(ph, false);
+    ph.lat = ph.geoLat; ph.lng = ph.geoLng;
+    openPanel(ph.id, false, [ph.id]);
+    if(map) map.panTo([ph.lat, ph.lng]);
+    scheduleSave();
+    toast('元の位置に戻しました');
+  }else if(ph.kind==='drawing'){
+    if(ph.origDrawingX===undefined) return;
+    if(ph.groupId) leaveGroup(ph, false);
+    ph.x = ph.origDrawingX; ph.y = ph.origDrawingY;
+    openPanel(ph.id, false, [ph.id]);
+    renderDrawingPins();
+    scheduleSave();
+    toast('元の位置に戻しました');
+  }
 }
 function closePanel(){
   activePhotoId = null;
@@ -3198,7 +3221,7 @@ async function returnToPool(){
   const returnedId = ph.id;
   ph.kind = 'pool';
   ph.poolScope = scope;
-  delete ph.lat; delete ph.lng; delete ph.geoLat; delete ph.geoLng;
+  delete ph.lat; delete ph.lng;
   delete ph.drawingId; delete ph.x; delete ph.y;
   renderMapView(); if(currentView==='drawing') renderDrawingPins();
   renderThumbView(); renderMapPoolTray(); renderDrawingPoolTray();
@@ -3240,6 +3263,7 @@ function moveActivePhotoToDrawing(drawingId){
       ph.drawingId = drawingId;
       ph.x = Math.max(1, Math.min(99, pos.x));
       ph.y = Math.max(1, Math.min(99, pos.y));
+      ph.origDrawingX = ph.x; ph.origDrawingY = ph.y;
       delete ph.poolScope;
       placedOnDrawing = true;
     }
@@ -3248,13 +3272,36 @@ function moveActivePhotoToDrawing(drawingId){
     ph.kind = 'pool';
     ph.poolScope = drawingId;
   }
-  delete ph.lat; delete ph.lng; delete ph.geoLat; delete ph.geoLng;
+  delete ph.lat; delete ph.lng;
   document.getElementById('moveToDrawModal').classList.remove('open');
   renderMapView(); renderMapPoolTray(); renderDrawingPoolTray(); renderThumbView();
   if(currentDrawingId===drawingId) renderDrawingPins();
   scheduleSave();
   toast(placedOnDrawing ? '緯度経度から図面上の位置に配置しました' : '図面が未位置合わせ、または範囲外のためプールに追加しました');
   advanceQueueAfterRemoval(movedId);
+}
+function returnPhotoToMap(){
+  const ph = findPhoto(activePhotoId);
+  if(!ph || ph.kind==='map') return;
+  if(ph.groupId) leaveGroup(ph, false);
+  const returnedId = ph.id;
+  const wasDrawingId = ph.drawingId;
+  delete ph.drawingId; delete ph.x; delete ph.y; delete ph.poolScope;
+  delete ph.origDrawingX; delete ph.origDrawingY;
+  const hasGeo = ph.geoLat !== undefined && ph.geoLng !== undefined;
+  if(hasGeo){
+    ph.kind = 'map';
+    ph.lat = ph.geoLat; ph.lng = ph.geoLng;
+  }else{
+    ph.kind = 'pool';
+    ph.poolScope = 'map';
+  }
+  if(hasGeo) checkAutoGroupForPhoto(ph.id);
+  renderMapView(); renderMapPoolTray(); renderDrawingPoolTray(); renderThumbView();
+  if(currentDrawingId===wasDrawingId) renderDrawingPins();
+  scheduleSave();
+  toast(hasGeo ? 'マップ上の位置情報通りに配置しました' : 'マップのプールに追加しました');
+  advanceQueueAfterRemoval(returnedId);
 }
 async function deletePoolPhoto(photoId){
   const p = currentProject();
