@@ -901,7 +901,12 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function makeClusterIcon(cluster){
-  const n = cluster.getChildCount();
+  const p = currentProject();
+  let n = 0;
+  cluster.getAllChildMarkers().forEach(m=>{
+    if(m.photoId) n += 1;
+    else if(m.groupId && p) n += p.photos.filter(ph=>ph.groupId===m.groupId).length;
+  });
   const big = n >= 20 ? ' big' : '';
   return L.divIcon({
     className:'', html:`<div class="clusterPin${big}"><span>${n}</span></div>`,
@@ -1035,13 +1040,18 @@ async function init(){
     zoomToBoundsOnClick: false,
     spiderfyOnMaxZoom: false,
     showCoverageOnHover: false,
-    maxClusterRadius: 60,
+    maxClusterRadius: clusterRadiusForZoom,
     iconCreateFunction: makeClusterIcon,
     chunkedLoading: true
   }).addTo(map);
   photoClusterGroup.on('clusterclick', e=>{
-    const ids = e.layer.getAllChildMarkers().map(m=>m.photoId);
-    openPanel(ids[0], false, ids);
+    const p = currentProject();
+    const ids = [];
+    e.layer.getAllChildMarkers().forEach(m=>{
+      if(m.photoId){ ids.push(m.photoId); }
+      else if(m.groupId && p){ p.photos.filter(ph=>ph.groupId===m.groupId).forEach(ph=> ids.push(ph.id)); }
+    });
+    if(ids.length) openPanel(ids[0], false, ids);
   });
   map.on('moveend zoomend viewreset', repositionAllOverlays);
   map.on('click', onMapClickForLabel);
@@ -1877,6 +1887,17 @@ function fitAll(silent){
 // ── 図面のジオ座標ユーティリティ(位置合わせモードで使用) ──
 function metersPerPixelAtZoom(lat, zoom){
   return 156543.03392 * Math.cos(lat*Math.PI/180) / Math.pow(2, zoom);
+}
+// 写真クラスタの見た目の半径。最大ズームでだけ、実距離の自動グループ化しきい値と一致させる。
+// これにより「最大ズームなのに解けきらない見た目だけのクラスタ」が原理的に起きなくなる。
+function clusterRadiusForZoom(zoom){
+  const mapMaxZoom = (map && map.getMaxZoom) ? map.getMaxZoom() : 19;
+  if(zoom >= mapMaxZoom){
+    const lat = map ? map.getCenter().lat : 35;
+    const mpp = metersPerPixelAtZoom(lat, zoom);
+    return Math.max(4, AUTO_GROUP_DISTANCE_M / mpp);
+  }
+  return 60;
 }
 function positionOverlayEl(el, geo, imgW, imgH){
   const zoom = map.getZoom();
