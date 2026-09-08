@@ -1086,13 +1086,15 @@ async function init(){
     chunkedLoading: true
   }).addTo(map);
   photoClusterGroup.on('clusterclick', e=>{
-    const p = currentProject();
-    const ids = [];
-    e.layer.getAllChildMarkers().forEach(m=>{
-      if(m.photoId){ ids.push(m.photoId); }
-      else if(m.groupId && p){ p.photos.filter(ph=>ph.groupId===m.groupId).forEach(ph=> ids.push(ph.id)); }
-    });
-    if(ids.length) openPanel(ids[0], false, ids);
+    try{
+      const p = currentProject();
+      const ids = [];
+      e.layer.getAllChildMarkers().forEach(m=>{
+        if(m.photoId){ ids.push(m.photoId); }
+        else if(m.groupId && p){ p.photos.filter(ph=>ph.groupId===m.groupId).forEach(ph=> ids.push(ph.id)); }
+      });
+      if(ids.length) openPanel(ids[0], false, ids);
+    }catch(err){ console.error(err); }
   });
   map.on('moveend zoomend viewreset', repositionAllOverlays);
   map.on('click', onMapClickForLabel);
@@ -1597,7 +1599,9 @@ function renderProjectScreen(fitOnOpen){
   setTimeout(()=>{
     if(!map) return;
     map.invalidateSize();
-    if(fitOnOpen) fitAll(true);
+    if(fitOnOpen){
+      try{ fitAll(true); }catch(err){ console.error(err); }
+    }
   }, 60);
 }
 
@@ -1844,18 +1848,22 @@ function onMarkerDragEnd(marker, self){
     return;
   }
   const p = currentProject();
+  let rerendered = false;
   if(self.type==='photo'){
     const ph = findPhoto(self.id);
     ph.lat = ll.lat; ph.lng = ll.lng;
     if(ph.id===activePhotoId) document.getElementById('panelCoord').textContent = `${ph.lat.toFixed(6)}, ${ph.lng.toFixed(6)}`;
     updateResetGeoVisibility(ph);
     const autoGrouped = checkAutoGroupForPhoto(ph.id);
-    if(autoGrouped){ renderMapView(); renderThumbView(); }
+    if(autoGrouped){ renderMapView(); renderThumbView(); rerendered = true; }
   }else{
     const g = p.groups.find(x=>x.id===self.id);
     g.lat = ll.lat; g.lng = ll.lng;
   }
-  if(photoClusterGroup && photoClusterGroup.refreshClusters){ photoClusterGroup.refreshClusters(marker); }
+  // renderMapView()が既に全マーカーを作り直している場合、このmarkerは破棄済みの古い参照になっているため呼ばない
+  if(!rerendered && photoClusterGroup && photoClusterGroup.refreshClusters){
+    try{ photoClusterGroup.refreshClusters(marker); }catch(err){ console.error(err); }
+  }
   scheduleSave();
 }
 function mergeIntoTarget(self, target){
