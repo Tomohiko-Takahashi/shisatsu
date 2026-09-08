@@ -1326,6 +1326,44 @@ function migrateProjectFields(p){
     if(ph.kind==='pool' && !ph.poolScope){ ph.poolScope = 'map'; }
     ph.comments.forEach(c=>{ if(!c.id) c.id = uid(); });
   });
+
+  // ── データ修復: 緯度経度が壊れている(undefined/NaN)写真・グループを自動修復 ──
+  function badNum(n){ return typeof n !== 'number' || Number.isNaN(n); }
+  let repaired = 0;
+  p.photos.forEach(ph=>{
+    if(ph.kind==='map' && (badNum(ph.lat) || badNum(ph.lng))){
+      if(!badNum(ph.geoLat) && !badNum(ph.geoLng)){
+        ph.lat = ph.geoLat; ph.lng = ph.geoLng;
+      }else{
+        ph.groupId = undefined;
+        ph.kind = 'pool';
+        ph.poolScope = 'map';
+        delete ph.lat; delete ph.lng;
+      }
+      repaired++;
+    }
+  });
+  p.groups = p.groups.filter(g=>{
+    if(g.drawingId) return true;
+    if(badNum(g.lat) || badNum(g.lng)){
+      p.photos.forEach(ph=>{
+        if(ph.groupId===g.id){
+          ph.groupId = undefined;
+          if(badNum(ph.lat) || badNum(ph.lng)){
+            ph.kind = 'pool'; ph.poolScope = 'map';
+            delete ph.lat; delete ph.lng;
+          }
+        }
+      });
+      repaired++;
+      return false;
+    }
+    return true;
+  });
+  if(repaired > 0){
+    console.warn(`fieldmap: ${repaired}件の壊れた位置情報を自動修復しました`);
+    try{ toast(`⚠️壊れた位置情報を${repaired}件、自動修復しました`); }catch(_){}
+  }
 }
 
 // ── 旧形式(/data.json 1ファイル)からの一度きりの移行 ─────
@@ -1634,7 +1672,7 @@ function renderMapView(){
   markersLayer.clearLayers();
   photoClusterGroup.clearLayers();
   p.groups = p.groups || [];
-  const mapPhotos = p.photos.filter(ph=>ph.kind==='map');
+  const mapPhotos = p.photos.filter(ph=>ph.kind==='map' && typeof ph.lat==='number' && !Number.isNaN(ph.lat) && typeof ph.lng==='number' && !Number.isNaN(ph.lng));
   document.getElementById('count').textContent = mapPhotos.length ? `${mapPhotos.length}件` : '';
   document.getElementById('mapEmpty').style.display = mapPhotos.length ? 'none' : 'block';
 
@@ -1821,7 +1859,8 @@ function checkAutoGroupForPhoto(photoId){
 // 既存データ向け: プロジェクト内の未グループ写真をまとめて一括チェックする(ボタンから明示的に実行)
 function autoGroupAllNearbyPhotos(){
   const p = currentProject();
-  const mapPhotos = p.photos.filter(ph=>ph.kind==='map' && !ph.groupId);
+  const validNum = n => typeof n === 'number' && !Number.isNaN(n);
+  const mapPhotos = p.photos.filter(ph=>ph.kind==='map' && !ph.groupId && validNum(ph.lat) && validNum(ph.lng));
   const n = mapPhotos.length;
   if(n < 2){ toast('対象になる写真がありません'); return; }
   const parent = mapPhotos.map((_,i)=>i);
@@ -1934,13 +1973,13 @@ function setCoverPhoto(){
 }
 function fitAll(silent){
   const p = currentProject();
-  const mapPhotos = p.photos.filter(ph=>ph.kind==='map');
+  const mapPhotos = p.photos.filter(ph=>ph.kind==='map' && typeof ph.lat==='number' && !Number.isNaN(ph.lat) && typeof ph.lng==='number' && !Number.isNaN(ph.lng));
   const placedDrawings = p.drawings.filter(d=> d.geo);
   if(!mapPhotos.length && !placedDrawings.length){ if(!silent) toast('地図上に何もありません'); return; }
   const photoPoints = mapPhotos.map(ph=>{
     if(ph.groupId){
       const g = (p.groups||[]).find(x=>x.id===ph.groupId);
-      if(g) return [g.lat, g.lng];
+      if(g && typeof g.lat==='number' && !Number.isNaN(g.lat) && typeof g.lng==='number' && !Number.isNaN(g.lng)) return [g.lat, g.lng];
     }
     return [ph.lat, ph.lng];
   });
