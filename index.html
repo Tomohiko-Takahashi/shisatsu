@@ -10,13 +10,13 @@
 <title>シサツ！</title>
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin="anonymous"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
-<script src="https://unpkg.com/exifr/dist/full.umd.js"></script>
-<script src="https://unpkg.com/dropbox@10.34.0/dist/Dropbox-sdk.min.js"></script>
-<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/exifr/dist/full.umd.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/dropbox@10.34.0/dist/Dropbox-sdk.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js" crossorigin="anonymous"></script>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=RocknRoll+One&display=swap" rel="stylesheet">
 
 <style>
@@ -1057,12 +1057,14 @@ async function handleOAuthRedirect(){
 // ── INIT ─────────────────────────────────────────────────
 // ── 診断用: 未捕捉のエラーをトーストで可視化(原因特定のため一時的に設置) ──
 window.addEventListener('error', (e)=>{
-  console.error('Uncaught error:', e.error || e.message);
-  try{ toast('⚠️エラー: ' + ((e.error && e.error.message) || e.message)); }catch(_){}
+  console.error('Uncaught error:', e.error || e.message, e.filename, e.lineno, e.colno);
+  const fname = e.filename ? e.filename.split('/').pop() : '';
+  const msg = (e.error && e.error.message) || e.message || '不明なエラー';
+  try{ toast(`⚠️エラー: ${msg} (${fname}:${e.lineno}:${e.colno})`); }catch(_){}
 });
 window.addEventListener('unhandledrejection', (e)=>{
   console.error('Unhandled rejection:', e.reason);
-  try{ toast('⚠️エラー: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason))); }catch(_){}
+  try{ toast('⚠️エラー(Promise): ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason))); }catch(_){}
 });
 
 async function init(){
