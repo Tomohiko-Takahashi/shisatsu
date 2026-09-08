@@ -1360,9 +1360,18 @@ function migrateProjectFields(p){
     }
     return true;
   });
+  p.drawings.forEach(d=>{
+    if(d.geo && (badNum(d.geo.lat) || badNum(d.geo.lng))){
+      d.geo = null;
+      repaired++;
+    }
+  });
+  const beforeLabelCount = p.mapLabels.length;
+  p.mapLabels = p.mapLabels.filter(lb=> !(badNum(lb.lat) || badNum(lb.lng)));
+  if(p.mapLabels.length !== beforeLabelCount) repaired += (beforeLabelCount - p.mapLabels.length);
   if(repaired > 0){
-    console.warn(`fieldmap: ${repaired}件の壊れた位置情報を自動修復しました`);
-    try{ toast(`⚠️壊れた位置情報を${repaired}件、自動修復しました`); }catch(_){}
+    console.warn(`fieldmap: ${repaired}件の壊れたデータを自動修復しました`);
+    try{ toast(`⚠️壊れたデータを${repaired}件、自動修復しました`); }catch(_){}
   }
 }
 
@@ -1667,12 +1676,20 @@ function switchView(v){
 
 // ── MAP VIEW ─────────────────────────────────────────────
 function renderMapView(){
+  try{ renderMapViewInner(); }
+  catch(err){
+    console.error('renderMapView failed:', err);
+    try{ toast('⚠️地図の描画に失敗しました: ' + err.message); }catch(_){}
+  }
+}
+function renderMapViewInner(){
   const p = currentProject();
   if(!p || !map) return;
   markersLayer.clearLayers();
   photoClusterGroup.clearLayers();
   p.groups = p.groups || [];
-  const mapPhotos = p.photos.filter(ph=>ph.kind==='map' && typeof ph.lat==='number' && !Number.isNaN(ph.lat) && typeof ph.lng==='number' && !Number.isNaN(ph.lng));
+  const validNum = n => typeof n==='number' && !Number.isNaN(n);
+  const mapPhotos = p.photos.filter(ph=>ph.kind==='map' && validNum(ph.lat) && validNum(ph.lng));
   document.getElementById('count').textContent = mapPhotos.length ? `${mapPhotos.length}件` : '';
   document.getElementById('mapEmpty').style.display = mapPhotos.length ? 'none' : 'block';
 
@@ -1692,6 +1709,8 @@ function renderMapView(){
   });
 
   p.groups.forEach(g=>{
+    if(g.drawingId) return;
+    if(!validNum(g.lat) || !validNum(g.lng)) return;
     const members = p.photos.filter(ph=> ph.groupId===g.id);
     if(members.length < 2) return;
     const cover = members.find(ph=>ph.id===g.coverPhotoId) || members[0];
@@ -1732,6 +1751,7 @@ function renderMapLabels(){
   if(!p || !map) return;
   const pane = map.getPanes().overlayPane;
   (p.mapLabels||[]).forEach(lb=>{
+    if(typeof lb.lat!=='number' || Number.isNaN(lb.lat) || typeof lb.lng!=='number' || Number.isNaN(lb.lng)) return;
     const el = document.createElement('div');
     el.className = 'dlabel';
     el.textContent = lb.text;
@@ -1788,7 +1808,7 @@ function renderDrawingMarkers(){
   const p = currentProject();
   if(!p || !map) return;
   const pane = map.getPanes().overlayPane;
-  p.drawings.filter(d=> d.geo).forEach(d=>{
+  p.drawings.filter(d=> d.geo && typeof d.geo.lat==='number' && !Number.isNaN(d.geo.lat) && typeof d.geo.lng==='number' && !Number.isNaN(d.geo.lng)).forEach(d=>{
     if(calibratingDrawing && calibratingDrawing.id===d.id) return;
     const wrap = document.createElement('div');
     wrap.className = 'geoOverlayWrap';
@@ -1974,7 +1994,7 @@ function setCoverPhoto(){
 function fitAll(silent){
   const p = currentProject();
   const mapPhotos = p.photos.filter(ph=>ph.kind==='map' && typeof ph.lat==='number' && !Number.isNaN(ph.lat) && typeof ph.lng==='number' && !Number.isNaN(ph.lng));
-  const placedDrawings = p.drawings.filter(d=> d.geo);
+  const placedDrawings = p.drawings.filter(d=> d.geo && typeof d.geo.lat==='number' && !Number.isNaN(d.geo.lat) && typeof d.geo.lng==='number' && !Number.isNaN(d.geo.lng));
   if(!mapPhotos.length && !placedDrawings.length){ if(!silent) toast('地図上に何もありません'); return; }
   const photoPoints = mapPhotos.map(ph=>{
     if(ph.groupId){
