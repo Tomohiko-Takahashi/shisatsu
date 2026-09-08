@@ -1115,7 +1115,8 @@ async function init(){
     zoomToBoundsOnClick: false,
     spiderfyOnMaxZoom: false,
     showCoverageOnHover: false,
-    maxClusterRadius: clusterRadiusForZoom,
+    maxClusterRadius: 60,
+    disableClusteringAtZoom: 19,
     iconCreateFunction: makeClusterIcon,
     chunkedLoading: true
   }).addTo(map);
@@ -2035,17 +2036,6 @@ function fitAll(silent){
 // ── 図面のジオ座標ユーティリティ(位置合わせモードで使用) ──
 function metersPerPixelAtZoom(lat, zoom){
   return 156543.03392 * Math.cos(lat*Math.PI/180) / Math.pow(2, zoom);
-}
-// 写真クラスタの見た目の半径。最大ズームでだけ、実距離の自動グループ化しきい値と一致させる。
-// これにより「最大ズームなのに解けきらない見た目だけのクラスタ」が原理的に起きなくなる。
-function clusterRadiusForZoom(zoom){
-  const mapMaxZoom = (map && map.getMaxZoom) ? map.getMaxZoom() : 19;
-  if(zoom >= mapMaxZoom){
-    const lat = map ? map.getCenter().lat : 35;
-    const mpp = metersPerPixelAtZoom(lat, zoom);
-    return Math.max(4, AUTO_GROUP_DISTANCE_M / mpp);
-  }
-  return 60;
 }
 function positionOverlayEl(el, geo, imgW, imgH){
   const zoom = map.getZoom();
