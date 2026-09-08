@@ -914,6 +914,10 @@ function showPview(viewId){
 }
 
 // ── UTIL ─────────────────────────────────────────────────
+function updateHeaderCount(){
+  const p = currentProject();
+  document.getElementById('count').textContent = p ? `${p.photos.length}件` : '';
+}
 function toast(msg){
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -1711,7 +1715,7 @@ function renderMapViewInner(){
   p.groups = p.groups || [];
   const validNum = n => typeof n==='number' && !Number.isNaN(n);
   const mapPhotos = p.photos.filter(ph=>ph.kind==='map' && validNum(ph.lat) && validNum(ph.lng));
-  document.getElementById('count').textContent = mapPhotos.length ? `${mapPhotos.length}件` : '';
+  updateHeaderCount();
   document.getElementById('mapEmpty').style.display = mapPhotos.length ? 'none' : 'block';
 
   const ungrouped = mapPhotos.filter(ph=> !ph.groupId);
@@ -2604,6 +2608,7 @@ function currentDrawing(){
 }
 
 function renderDrawingView(){
+  updateHeaderCount();
   const d = currentDrawing();
   const hasDrawing = !!d;
   document.getElementById('drawingScroll').style.display = hasDrawing ? 'block' : 'none';
@@ -3119,6 +3124,7 @@ function pdfToImage(file){
 
 // ── THUMB VIEW ───────────────────────────────────────────
 function renderThumbView(){
+  updateHeaderCount();
   const p = currentProject();
   if(!p) return;
   const grid = document.getElementById('thumbGrid');
