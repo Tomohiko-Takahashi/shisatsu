@@ -175,7 +175,8 @@ button{font-family:inherit;}
 .drawChip.active .drawChipEdit{background:rgba(255,255,255,.28);}
 #drawingBody{position:absolute;top:48px;left:0;right:0;bottom:112px;overflow:hidden;}
 #drawingScroll{position:absolute;inset:0;overflow:auto;}
-#drawingInner{position:relative;margin:20px;}
+#drawingInner{position:relative;margin:20px;cursor:grab;touch-action:none;}
+#drawingInner:active{cursor:grabbing;}
 #drawingInner img{width:100%;height:100%;display:block;user-select:none;-webkit-user-drag:none;}
 #drawingInner.dragOver{outline:3px dashed var(--blue);outline-offset:-3px;}
 .dpin{position:absolute;transform:translate(-50%,-50%);cursor:grab;touch-action:none;}
@@ -485,6 +486,13 @@ button{font-family:inherit;}
   border-radius:8px;background:var(--panel);color:var(--ink);font-size:13px;cursor:pointer;margin-bottom:8px;
 }
 .moveToDrawItem:hover{border-color:var(--blue);}
+#noGeoList{max-height:320px;overflow-y:auto;margin-bottom:8px;}
+.noGeoItem{display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--line);cursor:pointer;}
+.noGeoItem:hover{background:var(--paper);}
+.noGeoItem img{width:40px;height:40px;object-fit:cover;border-radius:6px;flex:none;background:#000;}
+.noGeoItem .noGeoInfo{overflow:hidden;flex:1;}
+.noGeoItem .noGeoName{font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.noGeoItem .noGeoTag{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
 
 /* ── SETUP SCREEN ─────────────────────────── */
 #setup{position:fixed;inset:0;background:var(--paper);z-index:3000;display:none;align-items:center;justify-content:center;padding:24px;}
@@ -543,6 +551,7 @@ button{font-family:inherit;}
     <div class="hspacer"></div>
     <span id="count" class="mono"></span>
     <button class="iconbtn" id="reloadBtn" title="再読み込み"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
+    <button class="iconbtn" id="noGeoBtn" title="位置情報のない写真を確認">📍❓</button>
     <button class="iconbtn" id="settingsBtn" title="Dropbox設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   </div>
   <div class="hrow" id="tabRow" style="display:none;">
@@ -788,6 +797,15 @@ button{font-family:inherit;}
       <button class="primaryBtn" id="labelSaveBtn">保存</button>
     </div>
     <button id="labelEditClose" class="closeBtn">閉じる</button>
+  </div>
+</div>
+
+<div class="modalBg" id="noGeoModal">
+  <div class="card">
+    <h2>位置情報のない写真</h2>
+    <p>プール・図面上にあり、元のGPS情報を持っていない写真の一覧です(過去の不具合の影響などで消えたものを含みます)。クリックすると詳細を開きます。</p>
+    <div id="noGeoList"></div>
+    <button id="noGeoClose" class="closeBtn">閉じる</button>
   </div>
 </div>
 
@@ -1181,7 +1199,8 @@ function bindUI(){
     document.getElementById('newLabelModal').classList.remove('open');
   });
   document.getElementById('newLabelNext').addEventListener('click', startLabelPlacement);
-  document.getElementById('drawingInner').addEventListener('click', onDrawingInnerClickForLabel);
+  document.getElementById('drawingInner').addEventListener('pointerdown', onDrawingInnerPointerDown);
+  document.getElementById('drawingScroll').addEventListener('wheel', onDrawingWheel, { passive:false });
   document.getElementById('labelEditClose').addEventListener('click', ()=> document.getElementById('labelEditModal').classList.remove('open'));
   document.getElementById('labelSaveBtn').addEventListener('click', saveLabelEdit);
   document.getElementById('labelDeleteBtn').addEventListener('click', deleteLabelEdit);
@@ -1240,6 +1259,8 @@ function bindUI(){
     if(e.target.id==='fullscreenView') document.getElementById('fullscreenView').classList.remove('open');
   });
 
+  document.getElementById('noGeoBtn').addEventListener('click', openNoGeoModal);
+  document.getElementById('noGeoClose').addEventListener('click', ()=> document.getElementById('noGeoModal').classList.remove('open'));
   document.getElementById('settingsBtn').addEventListener('click', ()=>{
     document.getElementById('settingsAppKeyInput').value = localStorage.getItem(LS_APPKEY_KEY) || '';
     document.getElementById('settingsModal').classList.add('open');
@@ -2862,19 +2883,58 @@ function startLabelPlacement(){
   document.getElementById('newLabelModal').classList.remove('open');
   toast(context==='map' ? '地図上をタップして配置してください' : '図面上をタップして配置してください');
 }
-function onDrawingInnerClickForLabel(e){
+function placeLabelAt(clientX, clientY){
   if(!pendingLabel || pendingLabel.context==='map') return;
   const d = currentDrawing();
   if(!d || pendingLabel.context !== d.id) return;
   const rect = document.getElementById('drawingInner').getBoundingClientRect();
-  const x = (e.clientX-rect.left)/rect.width*100;
-  const y = (e.clientY-rect.top)/rect.height*100;
+  const x = (clientX-rect.left)/rect.width*100;
+  const y = (clientY-rect.top)/rect.height*100;
   d.labels = d.labels || [];
   d.labels.push({ id: uid(), text: pendingLabel.text, fontSize: pendingLabel.fontSize, x, y });
   pendingLabel = null;
   renderDrawingLabels();
   scheduleSave();
   toast('文字を配置しました');
+}
+function onDrawingInnerPointerDown(e){
+  // ピン・ラベル自身のpointerdownは各要素でstopPropagation済みなので、ここに届くのは空白部分のみ
+  const scroll = document.getElementById('drawingScroll');
+  const startX = e.clientX, startY = e.clientY;
+  const startScrollLeft = scroll.scrollLeft, startScrollTop = scroll.scrollTop;
+  let moved = false;
+  function onMove(ev){
+    const dx = ev.clientX-startX, dy = ev.clientY-startY;
+    if(!moved && Math.hypot(dx,dy) > 6) moved = true;
+    if(moved){
+      scroll.scrollLeft = startScrollLeft - dx;
+      scroll.scrollTop = startScrollTop - dy;
+    }
+  }
+  function onUp(ev){
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    if(!moved){ placeLabelAt(ev.clientX, ev.clientY); }
+  }
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp, { once:true });
+}
+function onDrawingWheel(e){
+  const d = currentDrawing();
+  if(!d) return;
+  e.preventDefault();
+  const scroll = document.getElementById('drawingScroll');
+  const rect = scroll.getBoundingClientRect();
+  const cursorX = e.clientX - rect.left + scroll.scrollLeft;
+  const cursorY = e.clientY - rect.top + scroll.scrollTop;
+  const oldZoom = drawingZoom;
+  const newZoom = Math.max(0.5, Math.min(3, oldZoom + (e.deltaY < 0 ? 0.15 : -0.15)));
+  if(newZoom === oldZoom) return;
+  const ratio = newZoom / oldZoom;
+  drawingZoom = newZoom;
+  updateDrawingInnerSize();
+  scroll.scrollLeft = cursorX*ratio - (e.clientX - rect.left);
+  scroll.scrollTop = cursorY*ratio - (e.clientY - rect.top);
 }
 function onMapClickForLabel(e){
   if(!pendingLabel || pendingLabel.context!=='map') return;
@@ -3412,6 +3472,33 @@ async function returnToPool(){
   renderThumbView(); renderMapPoolTray(); renderDrawingPoolTray();
   scheduleSave();
   advanceQueueAfterRemoval(returnedId);
+}
+function openNoGeoModal(){
+  const p = currentProject();
+  if(!p) return;
+  const list = document.getElementById('noGeoList');
+  list.innerHTML = '';
+  const affected = p.photos.filter(ph=> (ph.kind==='pool' || ph.kind==='drawing') && ph.geoLat===undefined);
+  if(!affected.length){
+    list.innerHTML = '<p style="color:var(--muted);font-size:12px;">該当する写真はありません</p>';
+  }else{
+    affected.forEach(ph=>{
+      const item = document.createElement('div');
+      item.className = 'noGeoItem';
+      const tag = ph.kind==='pool'
+        ? (ph.poolScope==='map' ? 'プール(MAP)' : `プール(${(p.drawings.find(d=>d.id===ph.poolScope)||{}).name || '図面'})`)
+        : `図面: ${(p.drawings.find(d=>d.id===ph.drawingId)||{}).name || '不明'}`;
+      item.innerHTML = `<img src="${ph.thumb}"><div class="noGeoInfo"><div class="noGeoName"></div><div class="noGeoTag"></div></div>`;
+      item.querySelector('.noGeoName').textContent = ph.filename || '(ファイル名不明)';
+      item.querySelector('.noGeoTag').textContent = tag;
+      item.addEventListener('click', ()=>{
+        document.getElementById('noGeoModal').classList.remove('open');
+        openPanel(ph.id, true);
+      });
+      list.appendChild(item);
+    });
+  }
+  document.getElementById('noGeoModal').classList.add('open');
 }
 function openMoveToDrawModal(){
   const p = currentProject();
