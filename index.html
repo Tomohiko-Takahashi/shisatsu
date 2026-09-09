@@ -121,7 +121,8 @@ button{font-family:inherit;}
   box-shadow:0 1px 3px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;
 }
 .pin span{color:#fff;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;}
-.pin.active{box-shadow:0 0 0 3px rgba(29,43,50,.28),0 1px 3px rgba(0,0,0,.4);}
+.pin.active{background:var(--warn);box-shadow:0 0 0 3px rgba(176,82,47,.28),0 1px 3px rgba(0,0,0,.4);}
+.pin.active .dirNotch{border-bottom-color:var(--warn);}
 .dirRing{position:absolute;inset:0;pointer-events:none;}
 .dirNotch{
   position:absolute;top:-4px;left:50%;margin-left:-5px;width:0;height:0;
@@ -137,15 +138,16 @@ button{font-family:inherit;}
 }
 .groupPin img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none;}
 .groupPin.active .groupPinImgWrap{border-color:var(--warn);}
+.groupPin.active .dirNotch{border-bottom-color:var(--warn);}
 .groupPinCount{
   position:absolute;right:-4px;bottom:-4px;background:var(--ink);color:#fff;
   font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;font-family:'JetBrains Mono',monospace;
   border:1.5px solid #fff;z-index:1;
 }
 .groupPin .dirNotch{
-  top:-8px;margin-left:-8px;
+  top:-17px;margin-left:-8px;
   border-left:8px solid transparent;border-right:8px solid transparent;
-  border-bottom:11px solid var(--blue-deep);
+  border-bottom:20px solid var(--blue-deep);
 }
 .emptyState{
   position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
